@@ -41,3 +41,10 @@ class TranscriptSegment(BaseModel):
 class SpeakerTranscript(BaseModel):
     bot_id:   str
     speakers: dict[str, list[str]]   # { "Rahul": ["said this", "said that"] }
+
+
+
+class PerSpeakerSummaryResponse(BaseModel):
+    bot_id: str
+    transcript: str
+    per_speaker_summary: dict

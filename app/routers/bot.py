@@ -12,6 +12,9 @@ from app.models.schemas import JoinMeetingRequest, JoinMeetingResponse, MeetingN
 from app.services.recall_service import create_bot, fetch_speaker_transcript, format_transcript
 from app.services.llm_service import summarize_meeting
 
+from app.services.llm_service import summarize_meeting, summarize_per_speaker
+from app.models.schemas import JoinMeetingRequest, JoinMeetingResponse, MeetingNotesResponse, PerSpeakerSummaryResponse
+
 router = APIRouter()
 
 
@@ -44,4 +47,23 @@ async def process_bot(bot_id: str):
         bot_id=bot_id,
         transcript=formatted,
         notes=notes
+    )
+
+
+
+
+
+@router.post("/{bot_id}/summary", response_model=PerSpeakerSummaryResponse)
+async def per_speaker_summary(bot_id: str):
+    """
+    Returns per-person transcript + individual summary for each speaker.
+    """
+    speaker_map = await fetch_speaker_transcript(bot_id)
+    formatted   = format_transcript(speaker_map)
+    summaries   = await summarize_per_speaker(speaker_map)
+
+    return PerSpeakerSummaryResponse(
+        bot_id=bot_id,
+        transcript=formatted,
+        per_speaker_summary=summaries
     )
