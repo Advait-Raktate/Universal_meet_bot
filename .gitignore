@@ -1,0 +1,10 @@
+# Ignore environment variable files
+.env
+
+# Ignore virtual environment folder
+venv/
+
+# Ignore Python bytecode files
+*.pyc
+__pycache__/
+cloudflared-linux-amd64.deb
