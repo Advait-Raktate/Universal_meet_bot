@@ -34,6 +34,7 @@ async def join_meeting(body: JoinMeetingRequest):
 
 
 @router.post("/{bot_id}/process", response_model=MeetingNotesResponse)
+
 async def process_bot(bot_id: str):
     """
     Manually triggers transcript fetch + LLM summarization for a bot.
@@ -43,11 +44,18 @@ async def process_bot(bot_id: str):
     formatted   = format_transcript(speaker_map)
     notes       = await summarize_meeting(formatted)
 
+    
+   
     return MeetingNotesResponse(
         bot_id=bot_id,
         transcript=formatted,
+        
         notes=notes
     )
+
+    
+
+   
 
 
 
@@ -67,3 +75,13 @@ async def per_speaker_summary(bot_id: str):
         transcript=formatted,
         per_speaker_summary=summaries
     )
+
+
+@router.get("/{bot_id}/transcript")
+async def get_transcript(bot_id: str):
+    speaker_map = await fetch_speaker_transcript(bot_id)
+    formatted   = format_transcript(speaker_map)
+    return {
+        "bot_id": bot_id,
+        "transcript": formatted
+    }

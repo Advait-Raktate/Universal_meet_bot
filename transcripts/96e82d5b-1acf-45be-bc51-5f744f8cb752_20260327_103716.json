@@ -1,0 +1,9 @@
+{
+  "bot_id": "96e82d5b-1acf-45be-bc51-5f744f8cb752",
+  "timestamp": "2026-03-27T10:37:16.330892",
+  "transcript": "Sanika Patane:\n  - Hello. Hello. How are you? Hello. Hello. So we are here for testing the webhook which gives us transcript. So let us check how it will work. Thank you. Okay.\n",
+  "meeting_notes": "## Summary\nThe meeting involved testing a webhook that provides transcripts. The discussion was focused on checking the functionality and working of the webhook.\n\n## Key Decisions\n- None\n\n## Action Items\n- [ ] Test the webhook functionality — Owner: Not specified — Deadline: Not specified\n\n## Key Discussion Points\n- Testing the webhook which provides transcripts\n\n## Open Questions\n- None",
+  "per_speaker_summary": {
+    "Sanika Patane": "- Sanika Patane greeted the listeners multiple times.\n- She inquired about the listener's well-being.\n- She stated that they are testing a webhook for transcription purposes.\n- She mentioned that they are going to check how the webhook will work.\n- She thanked the listeners."
+  }
+}

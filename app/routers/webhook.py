@@ -5,12 +5,13 @@ Receives webhook events from Recall.ai.
 When bot.done fires, runs the full pipeline automatically:
   fetch transcript → format → LLM summarize → save notes
 """
-
+#import json
 import asyncio
 from fastapi import APIRouter, Request
 from app.services.recall_service import fetch_speaker_transcript, format_transcript
-from app.services.llm_service import summarize_meeting
-
+from app.services.llm_service import summarize_meeting, summarize_per_speaker
+from datetime import datetime
+from pathlib  import Path
 router = APIRouter()
 
 
@@ -21,6 +22,7 @@ async def recall_webhook(request: Request):
       - The meeting has ended
       - The transcript is fully processed and ready to fetch
     """
+    print("function called")
     event      = await request.json()
     event_type = event.get("event")
 
@@ -35,6 +37,8 @@ async def recall_webhook(request: Request):
 
 
 async def run_pipeline(bot_id: str):
+
+    import json
     """
     Full pipeline:
       1. Fetch transcript from Recall (grouped by speaker name)
@@ -55,18 +59,35 @@ async def run_pipeline(bot_id: str):
         formatted = format_transcript(speaker_map)
         print(f"\n── Transcript ───────────────────────────\n{formatted}")
 
-        # Step 3 — summarize
-        notes = await summarize_meeting(formatted)
-        print(f"\n── Meeting Notes ────────────────────────\n{notes}\n")
+        # Step 3: Run meeting summary + per speaker simultaneously
+        print("\n[PIPELINE] Generating summaries...")
+        meeting_notes, per_speaker = await asyncio.gather(
+            summarize_meeting(formatted),           # ← full meeting notes
+            summarize_per_speaker(speaker_map)      # ← per person summary
+        )
 
-        # Step 4 — save (replace with DB insert as needed)
-        with open(f"notes_{bot_id}.txt", "w") as f:
-            f.write("── TRANSCRIPT ──────────────────────────────────\n\n")
-            f.write(formatted)
-            f.write("\n\n── MEETING NOTES ───────────────────────────────\n\n")
-            f.write(notes)
+        print(f"\n── Meeting Notes ──\n{meeting_notes}")
+        print(f"\n── Per Speaker ──\n{per_speaker}")
 
-        print(f"[PIPELINE] Notes saved: notes_{bot_id}.txt")
+        # Step 4: Save as JSON file automatically
+        Path("transcripts").mkdir(exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename  = f"transcripts/{bot_id}_{timestamp}.json"
+
+        result = {
+            "bot_id":              bot_id,
+            "timestamp":           datetime.now().isoformat(),
+            "transcript":          formatted,
+            "meeting_notes":       meeting_notes,
+            "per_speaker_summary": per_speaker
+        }
+
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+
+        print(f"\n✅ [PIPELINE] Saved: {filename}")
 
     except Exception as e:
         print(f"[PIPELINE] Error for {bot_id}: {e}")
+

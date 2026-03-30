@@ -5,7 +5,7 @@ All Recall.ai API interactions:
   - Creating and sending the bot into a meeting
   - Fetching the transcript after the meeting ends
 """
-
+import json 
 import os
 import httpx
 from collections import defaultdict
@@ -41,10 +41,18 @@ async def create_bot(meet_url: str, bot_name: str) -> dict:
         "recording_config": {
             "transcript": {
                     "provider": {
-                        "recallai_streaming": {
-                            "language": "en",
-                            "identify_speaker": True
-                        }
+                       # "recallai_streaming": {
+                        #    "language": "auto",
+                        #    "identify_speaker": True
+                        #}
+                        "assembly_ai_async_chunked": {
+                    "speaker_labels": True,
+                    "language_detection": True,
+                    "format_text": True,
+                    "punctuate": True,
+                    "keyterms_prompt": [],        # ← keep empty, GPT-4o handles rest
+                    "disfluencies": False         # ← removes umm, ahh automatically
+    }
                     }
                 }
             }
@@ -81,6 +89,10 @@ async def get_download_url(bot_id: str) -> str:
         r.raise_for_status()
         bot = r.json()
 
+        #print(f"\n[DEBUG] Downloaded transcript type: {type(bot)}")
+
+        print(f"\n[DEBUG] Full bot response: {json.dumps(bot, indent=2)}")
+
     try:
         return (
             bot["recordings"][0]
@@ -115,6 +127,8 @@ async def fetch_speaker_transcript(bot_id: str) -> dict[str, list[str]]:
     speaker_map = defaultdict(list)
     for segment in raw:
         name  = segment.get("participant", {}).get("name") or "Unknown"
+        
+        
         words = segment.get("words", [])
         text  = " ".join(w["text"] for w in words).strip()
         if text:
