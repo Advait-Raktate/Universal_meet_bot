@@ -23,6 +23,10 @@ async def recall_webhook(request: Request):
       - The transcript is fully processed and ready to fetch
     """
     print("function called")
+
+    body = await request.json()
+    print(f"[WEBHOOK] Full body: {body}")
+
     event      = await request.json()
     event_type = event.get("event")
 
@@ -33,7 +37,53 @@ async def recall_webhook(request: Request):
         # Run pipeline in background — return 200 to Recall immediately
         asyncio.create_task(run_pipeline(bot_id))
 
+ # ── Calendar events updated ──
+    elif event_type == "calendar.sync_events":
+        #calendar_id = event["data"]["calendar"]["id"]
+        calendar_id      = event["data"]["calendar_id"]        # ← correct field name
+        last_updated_ts  = event["data"]["last_updated_ts"]    # ← get timestamp
+        asyncio.create_task(sync_calendar_events(calendar_id, last_updated_ts))
+        #asyncio.create_task(sync_calendar_events(calendar_id))
+
+    # ── Calendar disconnected ──
+    elif event_type == "calendar.update":
+        status = event["data"]["calendar"].get("status")
+        print(f"[CALENDAR] Status changed: {status}")
+
     return {"status": "ok"}
+
+
+async def sync_calendar_events(calendar_id: str):
+    """
+    Fetches all calendar events and schedules
+    bot for each one that has a Google Meet link.
+    """
+    from app.services.calendar_service import (
+        list_calendar_events,
+        schedule_bot_for_event
+    )
+
+    print(f"[CALENDAR] Syncing events for calendar: {calendar_id}")
+
+    events = await list_calendar_events(calendar_id , last_updated_ts)  # ← pass timestamp if needed
+
+    for event in events:
+        meeting_name = event.get("title", "Untitled Meeting")
+        meet_invite  = event.get("meet_invite")        # ← from Recall response
+        event_id     = event["id"]
+        will_record  = event.get("will_record", False)
+
+        if not meet_invite:
+            print(f"[CALENDAR] No Meet link in: {meeting_name} — skipping")
+            continue
+
+        if will_record:
+            print(f"[CALENDAR] Already scheduled: {meeting_name}")
+            continue
+
+        print(f"[CALENDAR] Scheduling bot for: {meeting_name}")
+        await schedule_bot_for_event(event_id, meeting_name)
+        print(f"[CALENDAR] ✅ Bot scheduled for: {meeting_name}")
 
 
 async def run_pipeline(bot_id: str):
@@ -81,6 +131,7 @@ async def run_pipeline(bot_id: str):
             "transcript":          formatted,
             "meeting_notes":       meeting_notes,
             "per_speaker_summary": per_speaker
+            
         }
 
         with open(filename, "w", encoding="utf-8") as f:
