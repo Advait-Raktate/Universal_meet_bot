@@ -3,7 +3,7 @@ app/services/recall_service.py
 -------------------------------
 All Recall.ai API interactions:
   - Creating and sending the bot into a meeting
-  - Fetching the transcript after the meeting ends
+  - Fetching the transcript after the meeting ends (with participant emails)
 """
 
 import os
@@ -29,26 +29,21 @@ HEADERS = {
 # ─────────────────────────────────────────
 
 async def create_bot(meet_url: str, bot_name: str) -> dict:
-    """
-    Sends a bot into the Google Meet.
-    Uses Recall's default built-in transcription — no extra config needed.
-    Recall will POST to /webhook/recall when the meeting ends.
-    """
     payload = {
         "meeting_url": meet_url,
         "bot_name":    bot_name,
         "webhook_url": f"{PUBLIC_URL}/webhook/recall",
         "recording_config": {
             "transcript": {
-                    "provider": {
-                        "recallai_streaming": {
-                            "language": "en",
-                            "identify_speaker": True
-                        }
+                "provider": {
+                    "recallai_streaming": {
+                        "language":         "en",
+                        "identify_speaker": True
                     }
                 }
             }
         }
+    }
 
     async with httpx.AsyncClient() as client:
         r = await client.post(
@@ -57,7 +52,6 @@ async def create_bot(meet_url: str, bot_name: str) -> dict:
             json=payload,
             timeout=30
         )
-        # Print exact error from Recall if it fails
         if r.status_code >= 400:
             print(f"[RECALL ERROR] {r.status_code}: {r.text}")
         r.raise_for_status()
@@ -69,9 +63,6 @@ async def create_bot(meet_url: str, bot_name: str) -> dict:
 # ─────────────────────────────────────────
 
 async def get_download_url(bot_id: str) -> str:
-    """
-    Calls GET /api/v1/bot/{bot_id}/ and extracts the transcript download URL.
-    """
     async with httpx.AsyncClient() as client:
         r = await client.get(
             f"{RECALL_BASE}/bot/{bot_id}/",
@@ -94,43 +85,71 @@ async def get_download_url(bot_id: str) -> str:
 
 
 async def download_raw_transcript(download_url: str) -> list[dict]:
-    """Downloads the raw transcript JSON array from Recall's CDN."""
     async with httpx.AsyncClient() as client:
         r = await client.get(download_url, timeout=60)
         r.raise_for_status()
         return r.json()
 
 
-async def fetch_speaker_transcript(bot_id: str) -> dict[str, list[str]]:
+async def fetch_speaker_transcript(bot_id: str) -> dict:
     """
-    Full two-step fetch. Returns transcript grouped by speaker:
+    Returns transcript grouped by speaker with email info:
     {
-        "Rahul Kumar": ["we should ship this", "I'll send the PR"],
-        "Priya Sharma": ["agreed, let's go"]
+        "Rahul Kumar": {
+            "email":      "rahul@company.com",   # null if calendar not connected
+            "utterances": ["we should ship this", "I'll send the PR"]
+        },
+        "Priya Sharma": {
+            "email":      "priya@company.com",
+            "utterances": ["agreed, let's go"]
+        }
     }
     """
     download_url = await get_download_url(bot_id)
     raw          = await download_raw_transcript(download_url)
 
-    speaker_map = defaultdict(list)
+    # speaker_map: { name -> { email, utterances[] } }
+    speaker_map = {}
+
     for segment in raw:
-        name  = segment.get("participant", {}).get("name") or "Unknown"
-        words = segment.get("words", [])
-        text  = " ".join(w["text"] for w in words).strip()
-        if text:
-            speaker_map[name].append(text)
+        participant = segment.get("participant", {})
+        name  = participant.get("name")  or "Unknown"
+        email = participant.get("email") or None   # only present if calendar connected
 
-    return dict(speaker_map)
+        text  = " ".join(w["text"] for w in segment.get("words", [])).strip()
+        if not text:
+            continue
+
+        if name not in speaker_map:
+            speaker_map[name] = {"email": email, "utterances": []}
+
+        # update email if it was null before but is now available
+        if email and not speaker_map[name]["email"]:
+            speaker_map[name]["email"] = email
+
+        speaker_map[name]["utterances"].append(text)
+
+    return speaker_map
 
 
-def format_transcript(speaker_map: dict[str, list[str]]) -> str:
+def format_transcript(speaker_map: dict) -> str:
     """
     Converts speaker map into a clean string for the LLM.
+    Shows email next to name if available.
+
+    Rahul Kumar (rahul@company.com):
+      - we should ship this
+      - I'll send the PR
+
+    Priya Sharma (no email):
+      - agreed, let's go
     """
     lines = []
-    for name, utterances in speaker_map.items():
-        lines.append(f"{name}:")
-        for u in utterances:
+    for name, data in speaker_map.items():
+        email  = data.get("email")
+        label  = f"{name} ({email})" if email else f"{name} (no email)"
+        lines.append(f"{label}:")
+        for u in data["utterances"]:
             lines.append(f"  - {u}")
         lines.append("")
     return "\n".join(lines)
