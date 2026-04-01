@@ -3,7 +3,7 @@ app/services/recall_service.py
 -------------------------------
 All Recall.ai API interactions:
   - Creating and sending the bot into a meeting
-  - Fetching the transcript after the meeting ends
+  - Fetching the transcript after the meeting ends (with participant emails)
 """
 import os
 import httpx
@@ -28,11 +28,6 @@ HEADERS = {
 # ─────────────────────────────────────────
 
 async def create_bot(meet_url: str, bot_name: str) -> dict:
-    """
-    Sends a bot into the Google Meet.
-    Uses Recall's default built-in transcription — no extra config needed.
-    Recall will POST to /webhook/recall when the meeting ends.
-    """
     payload = {
         "meeting_url": meet_url,
         "bot_name":    bot_name,
@@ -40,6 +35,7 @@ async def create_bot(meet_url: str, bot_name: str) -> dict:
         "recording_config": {
             "transcript": {
                 "provider": {
+<<<<<<< HEAD
                     "assembly_ai_async_chunked": {
                         "speaker_labels":     True,
                         "language_detection": True,
@@ -47,6 +43,11 @@ async def create_bot(meet_url: str, bot_name: str) -> dict:
                         "punctuate":          True,
                         "keyterms_prompt":    [],   # GPT-4o handles rest
                         "disfluencies":       False  # removes umm, ahh
+=======
+                    "recallai_streaming": {
+                        "language":         "en",
+                        "identify_speaker": True
+>>>>>>> 84ce54fa2c59c182c238b90a087ab7453143c47d
                     }
                 }
             }
@@ -71,9 +72,6 @@ async def create_bot(meet_url: str, bot_name: str) -> dict:
 # ─────────────────────────────────────────
 
 async def get_download_url(bot_id: str) -> str:
-    """
-    Calls GET /api/v1/bot/{bot_id}/ and extracts the transcript download URL.
-    """
     async with httpx.AsyncClient() as client:
         r = await client.get(
             f"{RECALL_BASE}/bot/{bot_id}/",
@@ -96,19 +94,31 @@ async def get_download_url(bot_id: str) -> str:
 
 
 async def download_raw_transcript(download_url: str) -> list[dict]:
-    """Downloads the raw transcript JSON array from Recall's CDN."""
     async with httpx.AsyncClient() as client:
         r = await client.get(download_url, timeout=60)
         r.raise_for_status()
         return r.json()
 
 
-async def fetch_speaker_transcript(bot_id: str) -> dict[str, list[str]]:
+async def fetch_speaker_transcript(bot_id: str) -> dict:
     """
+<<<<<<< HEAD
     Full two-step fetch. Returns raw transcript grouped by speaker.
     {
         "Rahul Kumar":  ["we should ship this", "I'll send the PR"],
         "Priya Sharma": ["agreed, let's go"]
+=======
+    Returns transcript grouped by speaker with email info:
+    {
+        "Rahul Kumar": {
+            "email":      "rahul@company.com",   # null if calendar not connected
+            "utterances": ["we should ship this", "I'll send the PR"]
+        },
+        "Priya Sharma": {
+            "email":      "priya@company.com",
+            "utterances": ["agreed, let's go"]
+        }
+>>>>>>> 84ce54fa2c59c182c238b90a087ab7453143c47d
     }
     NOTE: This returns raw/uncleaned text. Use fetch_and_format_transcript()
           for the cleaned, LLM-ready version.
@@ -116,25 +126,48 @@ async def fetch_speaker_transcript(bot_id: str) -> dict[str, list[str]]:
     download_url = await get_download_url(bot_id)
     raw          = await download_raw_transcript(download_url)
 
-    speaker_map = defaultdict(list)
+    # speaker_map: { name -> { email, utterances[] } }
+    speaker_map = {}
+
     for segment in raw:
-        name  = segment.get("participant", {}).get("name") or "Unknown"
-        words = segment.get("words", [])
-        text  = " ".join(w["text"] for w in words).strip()
-        if text:
-            speaker_map[name].append(text)
+        participant = segment.get("participant", {})
+        name  = participant.get("name")  or "Unknown"
+        email = participant.get("email") or None   # only present if calendar connected
 
-    return dict(speaker_map)
+        text  = " ".join(w["text"] for w in segment.get("words", [])).strip()
+        if not text:
+            continue
+
+        if name not in speaker_map:
+            speaker_map[name] = {"email": email, "utterances": []}
+
+        # update email if it was null before but is now available
+        if email and not speaker_map[name]["email"]:
+            speaker_map[name]["email"] = email
+
+        speaker_map[name]["utterances"].append(text)
+
+    return speaker_map
 
 
-def format_transcript(speaker_map: dict[str, list[str]]) -> str:
+def format_transcript(speaker_map: dict) -> str:
     """
     Converts speaker map into a clean string for the LLM.
+    Shows email next to name if available.
+
+    Rahul Kumar (rahul@company.com):
+      - we should ship this
+      - I'll send the PR
+
+    Priya Sharma (no email):
+      - agreed, let's go
     """
     lines = []
-    for name, utterances in speaker_map.items():
-        lines.append(f"{name}:")
-        for u in utterances:
+    for name, data in speaker_map.items():
+        email  = data.get("email")
+        label  = f"{name} ({email})" if email else f"{name} (no email)"
+        lines.append(f"{label}:")
+        for u in data["utterances"]:
             lines.append(f"  - {u}")
         lines.append("")
     return "\n".join(lines)

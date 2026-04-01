@@ -1,25 +1,11 @@
-"""
-app/models/schemas.py
----------------------
-Pydantic models for request bodies and response shapes.
-"""
-
 from pydantic import BaseModel
 from typing import Optional
 
 
-# ─────────────────────────────────────────
-# Request models
-# ─────────────────────────────────────────
-
 class JoinMeetingRequest(BaseModel):
-    meet_url: str                          # https://meet.google.com/xxx-yyy-zzz
-    bot_name: Optional[str] = "Notes Bot"  # name shown in the meeting
+    meet_url: str
+    bot_name: Optional[str] = "Notes Bot"
 
-
-# ─────────────────────────────────────────
-# Response models
-# ─────────────────────────────────────────
 
 class JoinMeetingResponse(BaseModel):
     bot_id:  str
@@ -29,17 +15,18 @@ class JoinMeetingResponse(BaseModel):
 
 class MeetingNotesResponse(BaseModel):
     bot_id:     str
-    transcript: str   # formatted speaker → utterances
-    notes:      str   # LLM generated summary + action items
+    transcript: str
+    notes:      str
 
 
-class TranscriptSegment(BaseModel):
-    speaker:  str
-    text:     str
+class SpeakerInfo(BaseModel):
+    email:      Optional[str]        # null if calendar not connected or duplicate name
+    utterances: list[str]
 
 
 class SpeakerTranscript(BaseModel):
     bot_id:   str
+<<<<<<< HEAD
     speakers: dict[str, list[str]]   # { "Rahul": ["said this", "said that"] }
 
 
@@ -48,3 +35,6 @@ class PerSpeakerSummaryResponse(BaseModel):
     bot_id: str
     transcript: str
     per_speaker_summary: dict
+=======
+    speakers: dict[str, SpeakerInfo]  # { "Rahul Kumar": { email, utterances } }
+>>>>>>> 84ce54fa2c59c182c238b90a087ab7453143c47d
