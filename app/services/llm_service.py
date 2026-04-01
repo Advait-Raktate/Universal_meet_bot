@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 SYSTEM_PROMPT = """
 You are a professional meeting assistant.
@@ -46,8 +46,9 @@ Rules:
 async def summarize_meeting(formatted_transcript: str) -> str:
     """
     Sends transcript to GPT-4o, returns structured meeting notes as a string.
+    Expects a clean (already fixed) transcript — call fix_technical_terms() first.
     """
-    response = await client.chat.completions.create(
+    response = await openai_client.chat.completions.create(
         model="gpt-4o",
         max_tokens=1500,
         messages=[
@@ -66,13 +67,59 @@ async def summarize_per_speaker(speaker_map: dict) -> dict:
     summaries = {}
     for name, utterances in speaker_map.items():
         combined = " ".join(utterances)
-        response = await client.chat.completions.create(
+        response = await openai_client.chat.completions.create(
             model="gpt-4o",
             max_tokens=500,
             messages=[
                 {"role": "system", "content": "You are a helpful meeting assistant."},
-                {"role": "user", "content": f"Summarize what {name} said in bullet points:\n\n{combined}"}
+                {"role": "user",   "content": f"Summarize what {name} said in bullet points:\n\n{combined}"}
             ]
         )
         summaries[name] = response.choices[0].message.content
     return summaries
+
+
+async def fix_technical_terms(text: str) -> str:
+    """
+    1. Converts Devanagari Hindi → Roman script (Hinglish)
+    2. Fixes mangled technical terms
+    Operates on the full formatted transcript string for best context.
+    """
+    response = await openai_client.chat.completions.create(
+        model="gpt-4o",
+        max_tokens=2048,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a transcript correction assistant for Hindi-English meetings."
+            },
+            {
+                "role": "user",
+                "content": f"""Your job:
+1. Convert ALL Devanagari Hindi text to Roman script (Hinglish)
+   - "मैंने देखा" → "Maine dekha"
+   - "हम करेंगे" → "Hum karenge"
+   - "पहले" → "Pehle"
+
+2. Fix ALL mangled technical terms to their correct English form
+   - "लांचन" → "LangChain"
+   - "वेबसॉक्टेड" → "WebSocket"
+   - "गिट" → "Git"
+   - Any other tech term you recognize
+
+3. Keep English words exactly as-is
+4. Do NOT translate Hindi to English — only romanize it
+5. Do NOT rephrase or change sentence structure
+6. Keep speaker names and formatting (name:, - bullets) exactly as-is
+7. Return only the corrected transcript, nothing else
+
+Example:
+Input:  "मैंने लांचन पैकेज का इशू देखा, वेबसॉक्टेड फिक्स करेंगे"
+Output: "Maine LangChain package ka issue dekha, WebSocket fix karenge"
+
+Transcript:
+{text}"""
+            }
+        ]
+    )
+    return response.choices[0].message.content

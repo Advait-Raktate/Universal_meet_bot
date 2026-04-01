@@ -3,15 +3,16 @@ app/routers/webhook.py
 -----------------------
 Receives webhook events from Recall.ai.
 When bot.done fires, runs the full pipeline automatically:
-  fetch transcript → format → LLM summarize → save notes
+  fetch transcript → fix Hindi/tech terms → format → LLM summarize → save notes
 """
-#import json
+import json
 import asyncio
 from fastapi import APIRouter, Request
-from app.services.recall_service import fetch_speaker_transcript, format_transcript
+from app.services.recall_service import fetch_and_format_transcript, fetch_speaker_transcript
 from app.services.llm_service import summarize_meeting, summarize_per_speaker
 from datetime import datetime
-from pathlib  import Path
+from pathlib import Path
+
 router = APIRouter()
 
 
@@ -27,99 +28,52 @@ async def recall_webhook(request: Request):
     body = await request.json()
     print(f"[WEBHOOK] Full body: {body}")
 
-    event      = await request.json()
-    event_type = event.get("event")
-
+    event_type = body.get("event")
     print(f"[WEBHOOK] Received: {event_type}")
 
     if event_type == "bot.done":
-        bot_id = event["data"]["bot"]["id"]
+        bot_id = body["data"]["bot"]["id"]
         # Run pipeline in background — return 200 to Recall immediately
         asyncio.create_task(run_pipeline(bot_id))
-
- # ── Calendar events updated ──
-    elif event_type == "calendar.sync_events":
-        #calendar_id = event["data"]["calendar"]["id"]
-        calendar_id      = event["data"]["calendar_id"]        # ← correct field name
-        last_updated_ts  = event["data"]["last_updated_ts"]    # ← get timestamp
-        asyncio.create_task(sync_calendar_events(calendar_id, last_updated_ts))
-        #asyncio.create_task(sync_calendar_events(calendar_id))
-
-    # ── Calendar disconnected ──
-    elif event_type == "calendar.update":
-        status = event["data"]["calendar"].get("status")
-        print(f"[CALENDAR] Status changed: {status}")
 
     return {"status": "ok"}
 
 
-async def sync_calendar_events(calendar_id: str):
-    """
-    Fetches all calendar events and schedules
-    bot for each one that has a Google Meet link.
-    """
-    from app.services.calendar_service import (
-        list_calendar_events,
-        schedule_bot_for_event
-    )
-
-    print(f"[CALENDAR] Syncing events for calendar: {calendar_id}")
-
-    events = await list_calendar_events(calendar_id , last_updated_ts)  # ← pass timestamp if needed
-
-    for event in events:
-        meeting_name = event.get("title", "Untitled Meeting")
-        meet_invite  = event.get("meet_invite")        # ← from Recall response
-        event_id     = event["id"]
-        will_record  = event.get("will_record", False)
-
-        if not meet_invite:
-            print(f"[CALENDAR] No Meet link in: {meeting_name} — skipping")
-            continue
-
-        if will_record:
-            print(f"[CALENDAR] Already scheduled: {meeting_name}")
-            continue
-
-        print(f"[CALENDAR] Scheduling bot for: {meeting_name}")
-        await schedule_bot_for_event(event_id, meeting_name)
-        print(f"[CALENDAR] ✅ Bot scheduled for: {meeting_name}")
-
-
 async def run_pipeline(bot_id: str):
-
-    import json
     """
     Full pipeline:
-      1. Fetch transcript from Recall (grouped by speaker name)
-      2. Format into clean readable text
-      3. Send to Claude for summary + action items
-      4. Save notes to file (swap for DB as needed)
+      1. Fetch raw transcript from Recall (grouped by speaker)
+      2. Format into readable text
+      3. Fix Devanagari Hindi → Hinglish + mangled tech terms (Claude)
+      4. Send clean transcript to GPT-4o for summary + action items
+      5. Save notes to JSON file (swap for DB as needed)
     """
     print(f"\n[PIPELINE] Starting for bot: {bot_id}")
 
     try:
-        # Step 1 — fetch
-        speaker_map = await fetch_speaker_transcript(bot_id)
-        if not speaker_map:
+        # Step 1+2+3 — fetch, format, and clean in one call
+        clean_transcript = await fetch_and_format_transcript(bot_id)
+
+        if not clean_transcript.strip():
             print(f"[PIPELINE] Empty transcript for {bot_id}")
             return
 
-        # Step 2 — format
-        formatted = format_transcript(speaker_map)
-        print(f"\n── Transcript ───────────────────────────\n{formatted}")
+        print(f"\n── Cleaned Transcript ───────────────────────────\n{clean_transcript}")
 
-        # Step 3: Run meeting summary + per speaker simultaneously
+        # Step 4 — fetch raw speaker_map separately for per-speaker summary
+        speaker_map = await fetch_speaker_transcript(bot_id)
+
+        # Step 5 — run meeting summary + per-speaker summary simultaneously
         print("\n[PIPELINE] Generating summaries...")
         meeting_notes, per_speaker = await asyncio.gather(
-            summarize_meeting(formatted),           # ← full meeting notes
-            summarize_per_speaker(speaker_map)      # ← per person summary
+            summarize_meeting(clean_transcript),    # full meeting notes (clean)
+            summarize_per_speaker(speaker_map)      # per person summary
         )
 
         print(f"\n── Meeting Notes ──\n{meeting_notes}")
         print(f"\n── Per Speaker ──\n{per_speaker}")
 
-        # Step 4: Save as JSON file automatically
+        # Step 6 — save as JSON file
         Path("transcripts").mkdir(exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -128,10 +82,9 @@ async def run_pipeline(bot_id: str):
         result = {
             "bot_id":              bot_id,
             "timestamp":           datetime.now().isoformat(),
-            "transcript":          formatted,
+            "transcript":          clean_transcript,
             "meeting_notes":       meeting_notes,
-            "per_speaker_summary": per_speaker
-            
+            "per_speaker_summary": per_speaker,
         }
 
         with open(filename, "w", encoding="utf-8") as f:
@@ -141,4 +94,4 @@ async def run_pipeline(bot_id: str):
 
     except Exception as e:
         print(f"[PIPELINE] Error for {bot_id}: {e}")
-
+        raise  # re-raise so the full traceback is visible in logs

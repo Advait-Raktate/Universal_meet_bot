@@ -5,7 +5,6 @@ All Recall.ai API interactions:
   - Creating and sending the bot into a meeting
   - Fetching the transcript after the meeting ends
 """
-import json 
 import os
 import httpx
 from collections import defaultdict
@@ -40,23 +39,19 @@ async def create_bot(meet_url: str, bot_name: str) -> dict:
         "webhook_url": f"{PUBLIC_URL}/webhook/recall",
         "recording_config": {
             "transcript": {
-                    "provider": {
-                       # "recallai_streaming": {
-                        #    "language": "auto",
-                        #    "identify_speaker": True
-                        #}
-                        "assembly_ai_async_chunked": {
-                    "speaker_labels": True,
-                    "language_detection": True,
-                    "format_text": True,
-                    "punctuate": True,
-                    "keyterms_prompt": [],        # ← keep empty, GPT-4o handles rest
-                    "disfluencies": False         # ← removes umm, ahh automatically
-    }
+                "provider": {
+                    "assembly_ai_async_chunked": {
+                        "speaker_labels":     True,
+                        "language_detection": True,
+                        "format_text":        True,
+                        "punctuate":          True,
+                        "keyterms_prompt":    [],   # GPT-4o handles rest
+                        "disfluencies":       False  # removes umm, ahh
                     }
                 }
             }
         }
+    }
 
     async with httpx.AsyncClient() as client:
         r = await client.post(
@@ -65,7 +60,6 @@ async def create_bot(meet_url: str, bot_name: str) -> dict:
             json=payload,
             timeout=30
         )
-        # Print exact error from Recall if it fails
         if r.status_code >= 400:
             print(f"[RECALL ERROR] {r.status_code}: {r.text}")
         r.raise_for_status()
@@ -89,10 +83,6 @@ async def get_download_url(bot_id: str) -> str:
         r.raise_for_status()
         bot = r.json()
 
-        #print(f"\n[DEBUG] Downloaded transcript type: {type(bot)}")
-
-        print(f"\n[DEBUG] Full bot response: {json.dumps(bot, indent=2)}")
-
     try:
         return (
             bot["recordings"][0]
@@ -115,11 +105,13 @@ async def download_raw_transcript(download_url: str) -> list[dict]:
 
 async def fetch_speaker_transcript(bot_id: str) -> dict[str, list[str]]:
     """
-    Full two-step fetch. Returns transcript grouped by speaker:
+    Full two-step fetch. Returns raw transcript grouped by speaker.
     {
-        "Rahul Kumar": ["we should ship this", "I'll send the PR"],
+        "Rahul Kumar":  ["we should ship this", "I'll send the PR"],
         "Priya Sharma": ["agreed, let's go"]
     }
+    NOTE: This returns raw/uncleaned text. Use fetch_and_format_transcript()
+          for the cleaned, LLM-ready version.
     """
     download_url = await get_download_url(bot_id)
     raw          = await download_raw_transcript(download_url)
@@ -127,8 +119,6 @@ async def fetch_speaker_transcript(bot_id: str) -> dict[str, list[str]]:
     speaker_map = defaultdict(list)
     for segment in raw:
         name  = segment.get("participant", {}).get("name") or "Unknown"
-        
-        
         words = segment.get("words", [])
         text  = " ".join(w["text"] for w in words).strip()
         if text:
@@ -148,3 +138,29 @@ def format_transcript(speaker_map: dict[str, list[str]]) -> str:
             lines.append(f"  - {u}")
         lines.append("")
     return "\n".join(lines)
+
+
+async def fetch_and_format_transcript(bot_id: str) -> str:
+    """
+    Full pipeline:
+      1. Fetch raw transcript from Recall
+      2. Group by speaker and format
+      3. Fix Devanagari Hindi → Hinglish + mangled tech terms via Claude
+      4. Return clean, LLM-ready transcript string
+
+    Use this instead of fetch_speaker_transcript() when passing
+    the transcript to summarize_meeting().
+    """
+    # Avoid circular import — import here, not at top of file
+    from app.services.llm_service import fix_technical_terms
+
+    speaker_map   = await fetch_speaker_transcript(bot_id)
+    raw_formatted = format_transcript(speaker_map)
+
+    print("[TRANSCRIPT] Raw formatted transcript:\n", raw_formatted)
+
+    clean_transcript = await fix_technical_terms(raw_formatted)
+
+    print("[TRANSCRIPT] Cleaned transcript:\n", clean_transcript)
+
+    return clean_transcript
