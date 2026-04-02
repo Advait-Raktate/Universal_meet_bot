@@ -13,16 +13,17 @@ from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Request
-from app.services.recall_service import fetch_speaker_transcript, format_transcript
-from app.services.llm_service import summarize_meeting
-
+from app.services.helper import _schedule_bot_for_event,_send_to_downstream,_fetch_bot_title
+from app.services.transcription_pipeline import run_pipeline
 router = APIRouter()
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 RECALL_API_KEY = os.getenv("RECALL_API_KEY")
 RECALL_REGION  = os.getenv("RECALL_REGION", "us-west-2")
 PUBLIC_URL     = os.getenv("PUBLIC_URL")
+DOWNSTREAM_API = os.getenv("DOWNSTREAM_API")
 
+RECALL_BASE_V1  = f"https://{RECALL_REGION}.recall.ai/api/v1"
 RECALL_BASE_V2 = f"https://{RECALL_REGION}.recall.ai/api/v2"
 RECALL_HEADERS = {
     "Authorization": f"Token {RECALL_API_KEY}",
@@ -48,8 +49,20 @@ async def recall_webhook(request: Request):
     print(f"[WEBHOOK] Received: {event_type}")
 
     if event_type == "bot.done":
-        bot_id = body["data"]["bot"]["id"]
-        asyncio.create_task(run_pipeline(bot_id))
+        bot_id = data["bot"]["id"]
+
+        meeting_title = (
+            data.get("bot", {}).get("meeting_metadata", {}).get("title")
+            or data.get("bot", {}).get("metadata", {}).get("meeting_title")
+            or ""
+        )
+
+        # 2. If not in payload, fetch from bot metadata API (FALLBACK BASICALLY)
+        if not meeting_title:
+            meeting_title = await _fetch_bot_title(bot_id)
+        print(f"[WEBHOOK] Meeting title resolved: '{meeting_title}'")
+        
+        asyncio.create_task(run_pipeline(bot_id, meeting_title))
         return {"status": "ok"}
 
     if event_type == "calendar.update":
@@ -100,73 +113,4 @@ async def recall_webhook(request: Request):
     return {"ok": True}
 
 
-# ─── Helper ───────────────────────────────────────────────────────────────────
-async def _schedule_bot_for_event(event_id: str, meet_url: str, title: str):
-    """
-    Schedules a bot for a calendar event.
-    deduplication_key = event_id ensures re-scheduling on event updates
-    doesn't create duplicate bots.
-    """
-    async with httpx.AsyncClient() as client:
-        res = await client.post(
-            f"{RECALL_BASE_V2}/calendar-events/{event_id}/bot/",
-            headers=RECALL_HEADERS,
-            json={
-                "deduplication_key": event_id,
-                "bot_config": {
-                    "bot_name":    "Notes Bot",
-                    "webhook_url": f"{PUBLIC_URL}/webhook/recall",
-                    "recording_config": {
-                        "transcript": {
-                            "provider": {
-                                "recallai_streaming": {
-                                    "language":         "en",
-                                    "identify_speaker": True,
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        )
-
-    if res.status_code in (200, 201):
-        bot_id = res.json().get("bot", {}).get("id")
-        print(f"[CALENDAR WEBHOOK] ✅ Bot scheduled for '{title}' | event={event_id} bot={bot_id}")
-    else:
-        print(f"[CALENDAR WEBHOOK] ❌ Failed to schedule bot for '{title}': {res.text}")
-
-
-# ─── Pipeline ─────────────────────────────────────────────────────────────────
-async def run_pipeline(bot_id: str):
-    """
-    Full post-meeting pipeline:
-      1. Fetch transcript from Recall (grouped by speaker)
-      2. Format into readable text
-      3. Summarize with LLM
-      4. Save notes to file
-    """
-    print(f"\n[PIPELINE] Starting for bot: {bot_id}")
-
-    try:
-        speaker_map = await fetch_speaker_transcript(bot_id)
-        if not speaker_map:
-            print(f"[PIPELINE] Empty transcript for {bot_id}")
-            return
-
-        formatted = format_transcript(speaker_map)
-        print(f"\n── Transcript ───────────────────────────\n{formatted}")
-
-        notes = await summarize_meeting(formatted)
-        print(f"\n── Meeting Notes ────────────────────────\n{notes}\n")
-
-        with open(f"notes_{bot_id}.txt", "w") as f:
-            f.write("── TRANSCRIPT ──────────────────────────────────\n\n")
-            f.write(formatted)
-            f.write("\n\n── MEETING NOTES ───────────────────────────────\n\n")
-            f.write(notes)
-
-        print(f"[PIPELINE] Notes saved: notes_{bot_id}.txt")
-
-    except Exception as e:
-        print(f"[PIPELINE] Error for {bot_id}: {e}")
+        

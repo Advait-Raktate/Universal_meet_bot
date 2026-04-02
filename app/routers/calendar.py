@@ -43,9 +43,9 @@ SCOPES = " ".join([
 ])
 
 
-# ─── STEP 1: Redirect user to Google consent screen ──────────────────────────
 @router.get("/connect")
-async def connect_google_calendar(user_id: str = Query(...)):
+async def connect_google_calendar():
+    # No user_id needed — we'll extract email from Google after login
     params = {
         "client_id":              GOOGLE_CLIENT_ID,
         "redirect_uri":           REDIRECT_URI,
@@ -54,18 +54,15 @@ async def connect_google_calendar(user_id: str = Query(...)):
         "access_type":            "offline",
         "prompt":                 "consent",
         "include_granted_scopes": "true",
-        "state":                  user_id,
     }
     query_string    = "&".join(f"{k}={v}" for k, v in params.items())
     google_auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{query_string}"
     return RedirectResponse(url=google_auth_url)
 
 
-# ─── STEP 2: Google redirects back here ──────────────────────────────────────
 @router.get("/google_callback")
-async def google_oauth_callback(code: str = Query(...), state: str = Query(...)):
-    user_id = state
-
+async def google_oauth_callback(code: str = Query(...)):
+    # Step 1 — exchange code for tokens
     async with httpx.AsyncClient() as client:
         token_res = await client.post(
             "https://oauth2.googleapis.com/token",
@@ -81,10 +78,27 @@ async def google_oauth_callback(code: str = Query(...), state: str = Query(...))
     if token_res.status_code != 200:
         raise HTTPException(status_code=400, detail=f"Failed to exchange code: {token_res.text}")
 
-    refresh_token = token_res.json().get("refresh_token")
+    tokens        = token_res.json()
+    refresh_token = tokens.get("refresh_token")
+    access_token  = tokens.get("access_token")
+
     if not refresh_token:
         raise HTTPException(status_code=400, detail="No refresh_token returned. Make sure prompt=consent is set.")
 
+    # Step 2 — fetch user email from Google using the access token
+    async with httpx.AsyncClient() as client:
+        userinfo_res = await client.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+    if userinfo_res.status_code != 200:
+        raise HTTPException(status_code=400, detail="Failed to fetch user info from Google")
+
+    user_id = userinfo_res.json().get("email")  # e.g. "your@email.com"
+    print(f"[CALENDAR] Google user identified: {user_id}")
+
+    # Step 3 — register calendar in Recall
     async with httpx.AsyncClient() as client:
         recall_res = await client.post(
             f"{RECALL_BASE_V2}/calendars/",
@@ -108,7 +122,6 @@ async def google_oauth_callback(code: str = Query(...), state: str = Query(...))
         "user_id":     user_id,
         "calendar_id": calendar_id,
     }
-
 
 # ─── Check connection status ──────────────────────────────────────────────────
 @router.get("/status")

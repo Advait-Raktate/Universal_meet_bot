@@ -91,65 +91,35 @@ async def download_raw_transcript(download_url: str) -> list[dict]:
         return r.json()
 
 
-async def fetch_speaker_transcript(bot_id: str) -> dict:
+async def fetch_speaker_transcript(bot_id: str) -> list[dict]:
     """
-    Returns transcript grouped by speaker with email info:
-    {
-        "Rahul Kumar": {
-            "email":      "rahul@company.com",   # null if calendar not connected
-            "utterances": ["we should ship this", "I'll send the PR"]
-        },
-        "Priya Sharma": {
-            "email":      "priya@company.com",
-            "utterances": ["agreed, let's go"]
-        }
-    }
+    Returns transcript as an ordered list of segments:
+    [
+        { "name": "Advait Raktate",  "text": "Good morning Mahinder." },
+        { "name": "Mahendra Yadav",  "text": "Again it's afternoon." },
+        ...
+    ]
     """
     download_url = await get_download_url(bot_id)
     raw          = await download_raw_transcript(download_url)
 
-    # speaker_map: { name -> { email, utterances[] } }
-    speaker_map = {}
-
+    segments = []
     for segment in raw:
-        participant = segment.get("participant", {})
-        name  = participant.get("name")  or "Unknown"
-        email = participant.get("email") or None   # only present if calendar connected
-
-        text  = " ".join(w["text"] for w in segment.get("words", [])).strip()
+        name = segment.get("participant", {}).get("name") or "Unknown"
+        text = " ".join(w["text"] for w in segment.get("words", [])).strip()
         if not text:
             continue
+        segments.append({"name": name, "text": text})
 
-        if name not in speaker_map:
-            speaker_map[name] = {"email": email, "utterances": []}
-
-        # update email if it was null before but is now available
-        if email and not speaker_map[name]["email"]:
-            speaker_map[name]["email"] = email
-
-        speaker_map[name]["utterances"].append(text)
-
-    return speaker_map
+    return segments
 
 
-def format_transcript(speaker_map: dict) -> str:
+def format_transcript(segments: list[dict]) -> str:
     """
-    Converts speaker map into a clean string for the LLM.
-    Shows email next to name if available.
+    Converts ordered segments into a clean sequential conversation string.
 
-    Rahul Kumar (rahul@company.com):
-      - we should ship this
-      - I'll send the PR
-
-    Priya Sharma (no email):
-      - agreed, let's go
+    Advait Raktate: Good morning Mahinder.
+    Mahendra Yadav: Again it's afternoon.
+    Advait Raktate: That's okay. So what are you doing today?
     """
-    lines = []
-    for name, data in speaker_map.items():
-        email  = data.get("email")
-        label  = f"{name} ({email})" if email else f"{name} (no email)"
-        lines.append(f"{label}:")
-        for u in data["utterances"]:
-            lines.append(f"  - {u}")
-        lines.append("")
-    return "\n".join(lines)
+    return "\n".join(f"{s['name']}: {s['text']}" for s in segments)

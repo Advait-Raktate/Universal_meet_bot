@@ -16,7 +16,6 @@ class JoinMeetingResponse(BaseModel):
 class MeetingNotesResponse(BaseModel):
     bot_id:     str
     transcript: str
-    notes:      str
 
 
 class SpeakerInfo(BaseModel):

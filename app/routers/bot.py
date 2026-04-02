@@ -10,7 +10,7 @@ import asyncio
 from fastapi import APIRouter
 from app.models.schemas import JoinMeetingRequest, JoinMeetingResponse, MeetingNotesResponse
 from app.services.recall_service import create_bot, fetch_speaker_transcript, format_transcript
-from app.services.llm_service import summarize_meeting
+
 
 router = APIRouter()
 
@@ -38,10 +38,9 @@ async def process_bot(bot_id: str):
     """
     speaker_map = await fetch_speaker_transcript(bot_id)
     formatted   = format_transcript(speaker_map)
-    notes       = await summarize_meeting(formatted)
+    
 
     return MeetingNotesResponse(
         bot_id=bot_id,
         transcript=formatted,
-        notes=notes
     )
