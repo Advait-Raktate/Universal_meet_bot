@@ -6,8 +6,6 @@ import httpx
 from fastapi import APIRouter, Request
 from app.services.recall_service import fetch_speaker_transcript, format_transcript
 
-router = APIRouter()
-
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 RECALL_API_KEY = os.getenv("RECALL_API_KEY")
 RECALL_REGION  = os.getenv("RECALL_REGION", "us-west-2")
