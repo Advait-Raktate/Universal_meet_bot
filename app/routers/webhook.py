@@ -7,28 +7,24 @@ Receives all webhook events from Recall.ai.
   POST /webhook/calendar  — calendar events (sync_events, calendar update)
 """
 
-import os
 import asyncio
 from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Request
-from app.services.helper import _schedule_bot_for_event,_send_to_downstream,_fetch_bot_title
+
+from app.core.config import settings
+from app.services.helper import _schedule_bot_for_event, _send_to_downstream, _fetch_bot_title
 from app.services.transcription_pipeline import run_pipeline
+
 router = APIRouter()
 
-# ─── CONFIG ───────────────────────────────────────────────────────────────────
-RECALL_API_KEY = os.getenv("RECALL_API_KEY")
-RECALL_REGION  = os.getenv("RECALL_REGION", "us-west-2")
-PUBLIC_URL     = os.getenv("PUBLIC_URL")
-DOWNSTREAM_API = os.getenv("DOWNSTREAM_API")
-
-RECALL_BASE_V1  = f"https://{RECALL_REGION}.recall.ai/api/v1"
-RECALL_BASE_V2 = f"https://{RECALL_REGION}.recall.ai/api/v2"
-RECALL_HEADERS = {
-    "Authorization": f"Token {RECALL_API_KEY}",
-    "Content-Type":  "application/json",
-}
+# Usage examples (replace your old CONFIG block with these):
+# settings.recall_base_v1
+# settings.recall_base_v2
+# settings.recall_headers
+# settings.public_url
+# settings.downstream_api
 
 
 # ─── Single Webhook — handles all Recall events ───────────────────────────────
@@ -76,8 +72,8 @@ async def recall_webhook(request: Request):
 
         async with httpx.AsyncClient() as client:
             res = await client.get(
-                f"{RECALL_BASE_V2}/calendar-events/",
-                headers=RECALL_HEADERS,
+                f"{settings.recall_base_v2}/calendar-events/",
+                headers=settings.recall_headers_accept,
                 params={
                     "calendar_id":     calendar_id,
                     "updated_at__gte": last_updated_ts,
