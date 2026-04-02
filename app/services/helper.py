@@ -1,4 +1,3 @@
-
 import asyncio
 from datetime import datetime, timezone
 import httpx
@@ -88,5 +87,4 @@ async def _fetch_bot_title(bot_id: str) -> str:
             title = recordings[0].get("meeting_metadata", {}).get("data", {}).get("title")
             if title:
                 return title
-
     return "Untitled Meeting"
