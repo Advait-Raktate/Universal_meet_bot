@@ -1,24 +1,12 @@
 
-import os
 import asyncio
 from datetime import datetime, timezone
 import httpx
 from fastapi import APIRouter, Request
+from app.core.config import settings
 from app.services.recall_service import fetch_speaker_transcript, format_transcript
 
 
-# ─── CONFIG ───────────────────────────────────────────────────────────────────
-RECALL_API_KEY = os.getenv("RECALL_API_KEY")
-RECALL_REGION  = os.getenv("RECALL_REGION", "us-west-2")
-PUBLIC_URL     = os.getenv("PUBLIC_URL")
-DOWNSTREAM_API = os.getenv("DOWNSTREAM_API")
-
-RECALL_BASE_V1  = f"https://{RECALL_REGION}.recall.ai/api/v1"
-RECALL_BASE_V2 = f"https://{RECALL_REGION}.recall.ai/api/v2"
-RECALL_HEADERS = {
-    "Authorization": f"Token {RECALL_API_KEY}",
-    "Content-Type":  "application/json",
-}
 async def _schedule_bot_for_event(event_id: str, meet_url: str, title: str):
     """
     Schedules a bot for a calendar event.
@@ -27,13 +15,13 @@ async def _schedule_bot_for_event(event_id: str, meet_url: str, title: str):
     """
     async with httpx.AsyncClient() as client:
         res = await client.post(
-            f"{RECALL_BASE_V2}/calendar-events/{event_id}/bot/",
-            headers=RECALL_HEADERS,
+            f"{settings.recall_base_v2}/calendar-events/{event_id}/bot/",
+            headers=settings.recall_headers,
             json={
                 "deduplication_key": event_id,
                 "bot_config": {
                     "bot_name":    "Notes Bot",
-                    "webhook_url": f"{PUBLIC_URL}/webhook/recall",
+                    "webhook_url": settings.webhook_recall_url,
                     "metadata": {"meeting_title": title},
                     "recording_config": {
                         "transcript": {
@@ -62,13 +50,13 @@ async def _send_to_downstream(payload: dict):
     POSTs { project_name, transcription } to your downstream API.
     Swap the URL / auth headers to match your API's requirements.
     """
-    if not DOWNSTREAM_API:
+    if not settings.downstream_api:
         print("[DOWNSTREAM] DOWNSTREAM_API_URL not set — skipping")
         return
 
     async with httpx.AsyncClient() as client:
         res = await client.post(
-            DOWNSTREAM_API,
+            settings.downstream_api,
             json=payload,
             headers={"Content-Type": "application/json"},
             timeout=30,
@@ -82,7 +70,10 @@ async def _send_to_downstream(payload: dict):
 
 async def _fetch_bot_title(bot_id: str) -> str:
     async with httpx.AsyncClient() as client:
-        res = await client.get(f"{RECALL_BASE_V1}/bot/{bot_id}/", headers=RECALL_HEADERS)
+        res = await client.get(
+            f"{settings.recall_base_v1}/bot/{bot_id}/",
+            headers=settings.recall_headers_accept,
+        )
     if res.status_code == 200:
         bot_data = res.json()
 

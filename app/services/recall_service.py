@@ -1,3 +1,4 @@
+
 """
 app/services/recall_service.py
 -------------------------------
@@ -6,22 +7,10 @@ All Recall.ai API interactions:
   - Fetching the transcript after the meeting ends (with participant emails)
 """
 
-import os
 import httpx
 from collections import defaultdict
-from dotenv import load_dotenv
 
-load_dotenv()
-
-RECALL_API_KEY = os.getenv("RECALL_API_KEY")
-RECALL_REGION  = os.getenv("RECALL_REGION", "us-west-2")
-RECALL_BASE    = f"https://{RECALL_REGION}.recall.ai/api/v1"
-PUBLIC_URL     = os.getenv("PUBLIC_URL")
-
-HEADERS = {
-    "Authorization": f"Token {RECALL_API_KEY}",
-    "Accept":        "application/json",
-}
+from app.core.config import settings
 
 
 # ─────────────────────────────────────────
@@ -32,7 +21,7 @@ async def create_bot(meet_url: str, bot_name: str) -> dict:
     payload = {
         "meeting_url": meet_url,
         "bot_name":    bot_name,
-        "webhook_url": f"{PUBLIC_URL}/webhook/recall",
+        "webhook_url": settings.webhook_recall_url,
         "recording_config": {
             "transcript": {
                 "provider": {
@@ -47,8 +36,8 @@ async def create_bot(meet_url: str, bot_name: str) -> dict:
 
     async with httpx.AsyncClient() as client:
         r = await client.post(
-            f"{RECALL_BASE}/bot/",
-            headers={**HEADERS, "Content-Type": "application/json"},
+            f"{settings.recall_base_v1}/bot/",
+            headers={**settings.recall_headers, "Content-Type": "application/json"},
             json=payload,
             timeout=30
         )
@@ -65,8 +54,8 @@ async def create_bot(meet_url: str, bot_name: str) -> dict:
 async def get_download_url(bot_id: str) -> str:
     async with httpx.AsyncClient() as client:
         r = await client.get(
-            f"{RECALL_BASE}/bot/{bot_id}/",
-            headers=HEADERS,
+            f"{settings.recall_base_v1}/bot/{bot_id}/",
+            headers=settings.recall_headers_accept,
             timeout=30
         )
         r.raise_for_status()

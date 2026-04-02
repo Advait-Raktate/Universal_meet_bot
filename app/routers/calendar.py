@@ -1,3 +1,4 @@
+
 """
 app/routers/calendar.py
 -----------------------
@@ -11,46 +12,23 @@ Endpoints:
   POST /calendar/schedule          — manually schedule bot for a meet URL
 """
 
-import os
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
-from dotenv import load_dotenv
-from app.routers.webhook import _schedule_bot_for_event
 
-load_dotenv()
+from app.core.config import settings
+from app.services.helper import _schedule_bot_for_event
 
 router = APIRouter()
-
-# ─── CONFIG ───────────────────────────────────────────────────────────────────
-GOOGLE_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-RECALL_API_KEY       = os.getenv("RECALL_API_KEY")
-RECALL_REGION        = os.getenv("RECALL_REGION", "us-west-2")
-PUBLIC_URL           = os.getenv("PUBLIC_URL")
-
-RECALL_BASE_V2 = f"https://{RECALL_REGION}.recall.ai/api/v2"
-REDIRECT_URI   = f"{PUBLIC_URL}/calendar/google_callback"
-
-RECALL_HEADERS = {
-    "Authorization": f"Token {RECALL_API_KEY}",
-    "Content-Type":  "application/json",
-}
-
-SCOPES = " ".join([
-    "https://www.googleapis.com/auth/calendar.events.readonly",
-    "https://www.googleapis.com/auth/userinfo.email",
-])
-
 
 @router.get("/connect")
 async def connect_google_calendar():
     # No user_id needed — we'll extract email from Google after login
     params = {
-        "client_id":              GOOGLE_CLIENT_ID,
-        "redirect_uri":           REDIRECT_URI,
+        "client_id":              settings.google_client_id,
+        "redirect_uri":           settings.redirect_uri,
         "response_type":          "code",
-        "scope":                  SCOPES,
+        "scope":                  settings.google_scopes,
         "access_type":            "offline",
         "prompt":                 "consent",
         "include_granted_scopes": "true",
@@ -68,9 +46,9 @@ async def google_oauth_callback(code: str = Query(...)):
             "https://oauth2.googleapis.com/token",
             data={
                 "code":          code,
-                "client_id":     GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "redirect_uri":  REDIRECT_URI,
+                "client_id":     settings.google_client_id,
+                "client_secret": settings.google_client_secret,
+                "redirect_uri":  settings.redirect_uri,
                 "grant_type":    "authorization_code",
             },
         )
@@ -101,11 +79,11 @@ async def google_oauth_callback(code: str = Query(...)):
     # Step 3 — register calendar in Recall
     async with httpx.AsyncClient() as client:
         recall_res = await client.post(
-            f"{RECALL_BASE_V2}/calendars/",
-            headers=RECALL_HEADERS,
+            f"{settings.recall_base_v2}/calendars/",
+            headers=settings.recall_headers,
             json={
-                "oauth_client_id":     GOOGLE_CLIENT_ID,
-                "oauth_client_secret": GOOGLE_CLIENT_SECRET,
+                "oauth_client_id":     settings.google_client_id,
+                "oauth_client_secret": settings.google_client_secret,
                 "oauth_refresh_token": refresh_token,
                 "platform":            "google_calendar",
             }
@@ -128,8 +106,8 @@ async def google_oauth_callback(code: str = Query(...)):
 async def calendar_status(user_id: str = Query(...)):
     async with httpx.AsyncClient() as client:
         res = await client.get(
-            f"{RECALL_BASE_V2}/calendars/",
-            headers=RECALL_HEADERS,
+            f"{settings.recall_base_v2}/calendars/",
+            headers=settings.recall_headers_accept,
             params={"external_id": user_id},
         )
 
@@ -152,8 +130,8 @@ async def calendar_status(user_id: str = Query(...)):
 async def list_calendar_events():
     async with httpx.AsyncClient() as client:
         res = await client.get(
-            f"{RECALL_BASE_V2}/calendar-events/",
-            headers=RECALL_HEADERS,
+            f"{settings.recall_base_v2}/calendar-events/",
+            headers=settings.recall_headers_accept,
         )
 
     events = res.json().get("results", [])
@@ -177,7 +155,10 @@ async def schedule_bot_by_meet_url(meet_url: str = Query(...)):
     For normal usage, bots are auto-scheduled via the webhook.
     """
     async with httpx.AsyncClient() as client:
-        res = await client.get(f"{RECALL_BASE_V2}/calendar-events/", headers=RECALL_HEADERS)
+        res = await client.get(
+            f"{settings.recall_base_v2}/calendar-events/",
+            headers=settings.recall_headers_accept,
+        )
 
     events  = res.json().get("results", [])
     matched = next((e for e in events if e.get("meeting_url") == meet_url), None)
