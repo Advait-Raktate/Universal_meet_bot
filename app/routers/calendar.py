@@ -16,7 +16,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
-from app.routers.webhook import _schedule_bot_for_event
+from app.services.bot_service import _schedule_bot_for_event , schedule_bot_by_meet_url
 
 load_dotenv()
 
@@ -156,33 +156,31 @@ async def list_calendar_events():
     ]
 
 
-# ─── Manual schedule by Meet URL (kept for ad-hoc use) ───────────────────────
-@router.post("/schedule")
-async def schedule_bot_by_meet_url(meet_url: str = Query(...)):
-    """
-    Manual fallback — useful for testing or scheduling a specific meeting.
-    For normal usage, bots are auto-scheduled via the webhook.
-    """
+
+@router.delete("/disconnect")
+async def disconnect_calendar(user_id: str = Query(...)):
     async with httpx.AsyncClient() as client:
-        res = await client.get(f"{RECALL_BASE_V2}/calendar-events/", headers=RECALL_HEADERS)
-
-    events  = res.json().get("results", [])
-    matched = next((e for e in events if e.get("meeting_url") == meet_url), None)
-
-    if not matched:
-        raise HTTPException(
-            status_code=404,
-            detail="No calendar event found for this Meet URL. Make sure the event exists on your connected Google Calendar."
+        # Step 1 — find calendar_id for this user
+        res = await client.get(
+            f"{RECALL_BASE_V2}/calendars/",
+            headers=RECALL_HEADERS,
+            params={"external_id": user_id},
         )
 
-    event_id = matched["id"]
-    title    = matched.get("raw", {}).get("summary", "No title")
+    calendars = res.json().get("results", [])
+    if not calendars:
+        return {"message": f"No calendar found for user: {user_id}"}
 
-    await _schedule_bot_for_event(event_id, meet_url, title)
+    calendar_id = calendars[0]["id"]
 
-    return {
-        "message":   "Bot scheduled ✅ — will auto-join at meeting start time",
-        "meet_url":  meet_url,
-        "event_id":  event_id,
-        "attendees": [a.get("email") for a in matched.get("raw", {}).get("attendees", [])],
-    }
+    async with httpx.AsyncClient() as client:
+        # Step 2 — delete it from Recall
+        res = await client.delete(
+            f"{RECALL_BASE_V2}/calendars/{calendar_id}/",
+            headers=RECALL_HEADERS,
+        )
+
+    if res.status_code == 204:
+        return {"message": f"✅ Disconnected calendar for user: {user_id}", "calendar_id": calendar_id}
+    else:
+        return {"message": f"❌ Failed to disconnect", "detail": res.text}

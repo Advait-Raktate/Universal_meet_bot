@@ -1,0 +1,18 @@
+{
+  "bot_id": "72ba4ec4-1c1a-4207-97fc-b035fc4f1d35",
+  "timestamp": "2026-04-03T09:46:36.955795",
+  "meeting_title": "Vaibhavi Patil's Zoom Meeting",
+  "meet_url": "https://zoom.us/j/83520210157?pwd=Va2suXo0TwKbkTOT9jrNsz4iVYSaVE.1",
+  "attendees": [
+    {
+      "email": "sanika@arcitech.ai",
+      "displayName": "sanika@arcitech.ai"
+    },
+    {
+      "email": "vaibhavi@arcitech.ai",
+      "displayName": "vaibhavi@arcitech.ai"
+    }
+  ],
+  "transcript": "[00:00] - [00:00] Admin:\n  - Sam. Hello. Hello. Hello.\n\n[00:00] - [00:00] Vaibhavi Patil:\n  - Hello. Hello. Good\n\n[00:00] - [00:00] Admin:\n  - afternoon. Hello. Hello. Hello,\n\n[00:00] - [00:00] Vaibhavi Patil:\n  - sanika. How are you? I\n\n[00:00] - [00:00] Admin:\n  - am feeling good, thank\n\n[00:00] - [00:00] Vaibhavi Patil:\n  - you.\n\n[00:00] - [00:00] Admin:\n  - Thank you.",
+  "transcript_by_email": "[00:00] - [00:00] Admin:\n  - Sam. Hello. Hello. Hello.\n\n[00:00] - [00:00] vaibhavi@arcitech.ai:\n  - Hello. Hello. Good\n\n[00:00] - [00:00] Admin:\n  - afternoon. Hello. Hello. Hello,\n\n[00:00] - [00:00] vaibhavi@arcitech.ai:\n  - sanika. How are you? I\n\n[00:00] - [00:00] Admin:\n  - am feeling good, thank\n\n[00:00] - [00:00] vaibhavi@arcitech.ai:\n  - you.\n\n[00:00] - [00:00] Admin:\n  - Thank you.\n"
+}

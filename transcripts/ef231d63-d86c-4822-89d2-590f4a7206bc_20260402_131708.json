@@ -1,0 +1,16 @@
+{
+  "bot_id": "ef231d63-d86c-4822-89d2-590f4a7206bc",
+  "timestamp": "2026-04-02T13:17:08.335122",
+  "meet_url": "https://meet.google.com/zss-reqh-hhn",
+  "attendees": [
+    {
+      "email": "vaibhavi@arcitech.ai",
+      "displayName": "vaibhavi@arcitech.ai"
+    },
+    {
+      "email": "sanika@arcitech.ai",
+      "displayName": "sanika@arcitech.ai"
+    }
+  ],
+  "transcript_by_email": ""
+}

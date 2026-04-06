@@ -3,11 +3,11 @@ app/services/recall_service.py
 -------------------------------
 All Recall.ai API interactions:
   - Creating and sending the bot into a meeting
-  - Fetching the transcript after the meeting ends (with participant emails)
+  - Fetching the transcript after the meeting ends
 """
 import os
+import asyncio
 import httpx
-from collections import defaultdict
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -28,6 +28,10 @@ HEADERS = {
 # ─────────────────────────────────────────
 
 async def create_bot(meet_url: str, bot_name: str) -> dict:
+    """
+    Sends a bot into the Google Meet.
+    Recall will POST to /webhook/recall when the meeting ends.
+    """
     payload = {
         "meeting_url": meet_url,
         "bot_name":    bot_name,
@@ -35,19 +39,14 @@ async def create_bot(meet_url: str, bot_name: str) -> dict:
         "recording_config": {
             "transcript": {
                 "provider": {
-<<<<<<< HEAD
                     "assembly_ai_async_chunked": {
                         "speaker_labels":     True,
                         "language_detection": True,
+                        "speech_model":       "universal-3-pro",
                         "format_text":        True,
                         "punctuate":          True,
-                        "keyterms_prompt":    [],   # GPT-4o handles rest
-                        "disfluencies":       False  # removes umm, ahh
-=======
-                    "recallai_streaming": {
-                        "language":         "en",
-                        "identify_speaker": True
->>>>>>> 84ce54fa2c59c182c238b90a087ab7453143c47d
+                        "keyterms_prompt":    [],
+                        "disfluencies":       False
                     }
                 }
             }
@@ -68,129 +67,207 @@ async def create_bot(meet_url: str, bot_name: str) -> dict:
 
 
 # ─────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────
+
+def seconds_to_mmss(seconds: float) -> str:
+    minutes = int(seconds // 60)
+    secs    = int(seconds % 60)
+    return f"[{minutes:02d}:{secs:02d}]"
+
+
+# ─────────────────────────────────────────
 # Fetch transcript after meeting ends
 # ─────────────────────────────────────────
 
 async def get_download_url(bot_id: str) -> str:
-    async with httpx.AsyncClient() as client:
-        r = await client.get(
-            f"{RECALL_BASE}/bot/{bot_id}/",
-            headers=HEADERS,
-            timeout=30
-        )
-        r.raise_for_status()
-        bot = r.json()
+    """
+    Calls GET /api/v1/bot/{bot_id}/ and extracts the transcript download URL.
+    Retries up to 10 times with 15s gap — AssemblyAI takes time after bot.done.
+    """
+    max_retries  = 10
+    wait_seconds = 15
 
-    try:
-        return (
-            bot["recordings"][0]
-               ["media_shortcuts"]
-               ["transcript"]
-               ["data"]
-               ["download_url"]
-        )
-    except (KeyError, IndexError):
-        raise Exception(f"Transcript not ready yet for bot: {bot_id}")
+    for attempt in range(max_retries):
+        async with httpx.AsyncClient() as client:
+            r = await client.get(
+                f"{RECALL_BASE}/bot/{bot_id}/",
+                headers=HEADERS,
+                timeout=30
+            )
+             # bot not found — likely created with different API key
+            if r.status_code == 404:
+                raise Exception(f"Bot {bot_id} not found — may have been created with a different API key")
+            r.raise_for_status()
+            bot = r.json()
+
+        try:
+            return (
+                bot["recordings"][0]
+                   ["media_shortcuts"]
+                   ["transcript"]
+                   ["data"]
+                   ["download_url"]
+            )
+        except (KeyError, IndexError):
+            print(f"[RECALL] Attempt {attempt+1}/{max_retries} — transcript URL not ready, waiting {wait_seconds}s...")
+            await asyncio.sleep(wait_seconds)
+
+    raise Exception(f"Transcript not ready after {max_retries} retries for bot: {bot_id}")
 
 
 async def download_raw_transcript(download_url: str) -> list[dict]:
+    """Downloads the raw transcript JSON array from Recall's CDN."""
     async with httpx.AsyncClient() as client:
         r = await client.get(download_url, timeout=60)
         r.raise_for_status()
         return r.json()
 
 
-async def fetch_speaker_transcript(bot_id: str) -> dict:
+async def fetch_speaker_transcript(bot_id: str) -> list[dict]:
     """
-<<<<<<< HEAD
-    Full two-step fetch. Returns raw transcript grouped by speaker.
-    {
-        "Rahul Kumar":  ["we should ship this", "I'll send the PR"],
-        "Priya Sharma": ["agreed, let's go"]
-=======
-    Returns transcript grouped by speaker with email info:
-    {
-        "Rahul Kumar": {
-            "email":      "rahul@company.com",   # null if calendar not connected
-            "utterances": ["we should ship this", "I'll send the PR"]
+    Returns transcript as ordered conversation list with timestamps:
+    [
+        {
+            "name":  "Sanika Patane",
+            "text":  "Hello. Good afternoon.",
+            "start": "[01:00]",
+            "end":   "[01:05]"
         },
-        "Priya Sharma": {
-            "email":      "priya@company.com",
-            "utterances": ["agreed, let's go"]
-        }
->>>>>>> 84ce54fa2c59c182c238b90a087ab7453143c47d
-    }
-    NOTE: This returns raw/uncleaned text. Use fetch_and_format_transcript()
-          for the cleaned, LLM-ready version.
+        ...
+    ]
+    Retries if transcript content is empty.
     """
-    download_url = await get_download_url(bot_id)
-    raw          = await download_raw_transcript(download_url)
+    max_retries  = 10
+    wait_seconds = 15
 
-    # speaker_map: { name -> { email, utterances[] } }
-    speaker_map = {}
+    raw = []
+    for attempt in range(max_retries):
+        download_url = await get_download_url(bot_id)
+        raw          = await download_raw_transcript(download_url)
 
+        print(f"[DEBUG] raw transcript length: {len(raw)}")
+
+        if len(raw) > 0:
+            break
+
+        print(f"[RECALL] Attempt {attempt+1}/{max_retries} — transcript empty, waiting {wait_seconds}s...")
+        await asyncio.sleep(wait_seconds)
+
+    segments = []
     for segment in raw:
-        participant = segment.get("participant", {})
-        name  = participant.get("name")  or "Unknown"
-        email = participant.get("email") or None   # only present if calendar connected
+        name  = segment.get("participant", {}).get("name") or "Unknown"
+        words = segment.get("words", [])
+        if not words:
+            continue
+        text       = " ".join(w["text"] for w in words).strip()
+        start_secs = words[0].get("start_timestamp", {}).get("relative", 0)
+        end_secs   = words[-1].get("end_timestamp", {}).get("relative", start_secs)
+        if text:
+            segments.append({
+                "name":  name,
+                "text":  text,
+                "start": seconds_to_mmss(start_secs),
+                "end":   seconds_to_mmss(end_secs)
+    })
 
-        text  = " ".join(w["text"] for w in segment.get("words", [])).strip()
-        if not text:
+    return segments
+
+def map_names_to_emails(
+    segments:  list[dict],
+    attendees: list[dict]
+) -> list[dict]:
+    """
+    Replaces speaker names with emails in ordered segments.
+    Matching priority:
+      1. Exact full displayName match
+      2. First name vs email prefix
+      3. Fallback to original name
+    """
+    name_to_email = {}
+
+    for seg in segments:
+        name = seg["name"]
+        if name in name_to_email:
             continue
 
-        if name not in speaker_map:
-            speaker_map[name] = {"email": email, "utterances": []}
+        first_name = name.split()[0].lower()
 
-        # update email if it was null before but is now available
-        if email and not speaker_map[name]["email"]:
-            speaker_map[name]["email"] = email
+        # Priority 1
+        matched = next(
+            (a["email"] for a in attendees
+             if a.get("displayName", "").strip() == name.strip()),
+            None
+        )
+        print(f"[MAP] '{name}' → Priority 1 (displayName): {matched}")
 
-        speaker_map[name]["utterances"].append(text)
+        # Priority 2
+        if not matched:
+            matched = next(
+                (a["email"] for a in attendees
+                 if a["email"].split("@")[0].lower() == first_name),
+                None
+            )
+            print(f"[MAP] '{name}' → Priority 2 (first name): {matched}")
 
-    return speaker_map
+        # Priority 3
+        if not matched:
+            matched = name
+            print(f"[MAP] '{name}' → Priority 3 (fallback): {matched}")
+
+        name_to_email[name] = matched
+
+    return [
+        {
+            "name":  name_to_email[s["name"]],
+            "text":  s["text"],
+            "start": s["start"],
+            "end":   s["end"]
+        }
+        for s in segments
+    ]
 
 
-def format_transcript(speaker_map: dict) -> str:
+def format_transcript(segments: list[dict]) -> str:
     """
-    Converts speaker map into a clean string for the LLM.
-    Shows email next to name if available.
+    Formats ordered conversation with time ranges.
+    Output:
+      [01:00 - 01:05] sanika@arcitech.ai:
+        - Hello. Good afternoon.
 
-    Rahul Kumar (rahul@company.com):
-      - we should ship this
-      - I'll send the PR
-
-    Priya Sharma (no email):
-      - agreed, let's go
+      [01:06 - 01:10] vaibhavi@arcitech.ai:
+        - Hi how are you
     """
+    if not segments:
+        return ""
+
     lines = []
-    for name, data in speaker_map.items():
-        email  = data.get("email")
-        label  = f"{name} ({email})" if email else f"{name} (no email)"
-        lines.append(f"{label}:")
-        for u in data["utterances"]:
-            lines.append(f"  - {u}")
+    for seg in segments:
+        lines.append(f"{seg['start']} - {seg['end']} {seg['name']}:")
+        lines.append(f"  - {seg['text']}")
         lines.append("")
+
     return "\n".join(lines)
 
 
 async def fetch_and_format_transcript(bot_id: str) -> str:
     """
     Full pipeline:
-      1. Fetch raw transcript from Recall
-      2. Group by speaker and format
-      3. Fix Devanagari Hindi → Hinglish + mangled tech terms via Claude
-      4. Return clean, LLM-ready transcript string
-
-    Use this instead of fetch_speaker_transcript() when passing
-    the transcript to summarize_meeting().
+      1. Fetch raw transcript from Recall (with retry)
+      2. Format as ordered conversation with timestamps
+      3. Fix Hindi → Hinglish + tech terms via GPT-4o
+      4. Return clean LLM-ready transcript string
     """
-    # Avoid circular import — import here, not at top of file
     from app.services.llm_service import fix_technical_terms
 
-    speaker_map   = await fetch_speaker_transcript(bot_id)
-    raw_formatted = format_transcript(speaker_map)
+    segments      = await fetch_speaker_transcript(bot_id)
+    raw_formatted = format_transcript(segments)
 
     print("[TRANSCRIPT] Raw formatted transcript:\n", raw_formatted)
+
+    if not raw_formatted.strip():
+        print("[TRANSCRIPT] Empty transcript — skipping fix_technical_terms")
+        return ""
 
     clean_transcript = await fix_technical_terms(raw_formatted)
 

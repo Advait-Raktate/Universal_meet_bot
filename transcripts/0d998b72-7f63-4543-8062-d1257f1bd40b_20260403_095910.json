@@ -1,0 +1,18 @@
+{
+  "bot_id": "0d998b72-7f63-4543-8062-d1257f1bd40b",
+  "timestamp": "2026-04-03T09:59:10.169293",
+  "meeting_title": "AG brain test",
+  "meet_url": "https://meet.google.com/jho-dqwt-zmh",
+  "attendees": [
+    {
+      "email": "sanika@arcitech.ai",
+      "displayName": "sanika@arcitech.ai"
+    },
+    {
+      "email": "suhani@arcitech.ai",
+      "displayName": "suhani@arcitech.ai"
+    }
+  ],
+  "transcript": "[00:00] - [00:00] Sanika Patane:\n  - hello script English mein de ka Hindi mein 11 sentence English mein de bol 11 Hindi mein de bol the the dilate mic good morning Suhani, aaj hum WebSocket bug fix karenge aur fir Git repository par push karenge\n\n[00:00] - [00:00] Suhani Rahinj:\n  - Jalika. Maine LangChain package ka issue dekha, hum pehle retest karni chahiye.\n\n[00:00] - [00:00] Sanika Patane:\n  - Absolutely right, screen recording fix is the high priority we need to deploy today\n\n[00:00] - [00:00] Suhani Rahinj:\n  - Camera\n\n[00:00] - [00:00] Sanika Patane:\n  - Samajh gayi. To pehle screen recording issue fix karte hain. Uske baad user management updates par munh karenge.\n\n[00:00] - [00:00] Suhani Rahinj:\n  - Okay requirement twenty three so to show to server today\n\n[00:00] - [00:00] Sanika Patane:\n  - Theek hai aur main abhi WebSocket start karti hoon kya tumhare paas QT ke liye interview model ka testing plan ready hai?\n\n[00:00] - [00:00] Suhani Rahinj:\n  - Main bhej\n\n[00:00] - [00:00] Sanika Patane:\n  - Okay lets go thank you,\n\n[00:00] - [00:00] Suhani Rahinj:\n  - Thank you\n\n[00:00] - [00:00] Sanika Patane:\n  - Bye.",
+  "transcript_by_email": "[00:00] - [00:00] sanika@arcitech.ai:\n  - hello script इंग्लिश में दे का हिंदी में 11 सेंटेंस इंग्लिश में दे बोल 11 हिंदी में दे बोल the the dilate mic गुड मॉर्निंग सुहानी, आज हम वेबसॉकेट बुक फिक्स करेंगे और फिर गिट रे पॉजिटिव पर पुष्ट करेंगे\n\n[00:00] - [00:00] suhani@arcitech.ai:\n  - जालिका। मैंने लैंगटन पैकेज का इशू देखा, हम पहले रिटेस्ट करनी चाहिए।\n\n[00:00] - [00:00] sanika@arcitech.ai:\n  - एबसोलूटली राइट, स्क्रीन रिकॉर्डिंग फिक्स इस द हाई प्रियोरिटी वी नीड तो डेप्लॉय टुडे\n\n[00:00] - [00:00] suhani@arcitech.ai:\n  - कैमरा\n\n[00:00] - [00:00] sanika@arcitech.ai:\n  - समझ गई। तो पहले स्क्रीन रिकॉर्डिंग इशू फिक्स करते हैं। उसके बाद यूजर मैनेजमेंट अपडेट्स पर मुंह करेंगे।\n\n[00:00] - [00:00] suhani@arcitech.ai:\n  - ओके रिक्वायरमेंट ट्वेंटी थ्री सो टो शो तो सेवर टुडे\n\n[00:00] - [00:00] sanika@arcitech.ai:\n  - ठीक है और मैं अभी वेबसॉकेट स्टार्ट करती हूँ क्या तुम्हारे पास क्यूटी के लिए इंटरव्यू मॉडल का टेस्टिंग प्लान रेडी है?\n\n[00:00] - [00:00] suhani@arcitech.ai:\n  - मैं भेज\n\n[00:00] - [00:00] sanika@arcitech.ai:\n  - ओके लेट्स को थैंक यू,\n\n[00:00] - [00:00] suhani@arcitech.ai:\n  - थैंक यू\n\n[00:00] - [00:00] sanika@arcitech.ai:\n  - बाई।\n"
+}

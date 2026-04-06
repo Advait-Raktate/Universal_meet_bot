@@ -26,7 +26,7 @@ class SpeakerInfo(BaseModel):
 
 class SpeakerTranscript(BaseModel):
     bot_id:   str
-<<<<<<< HEAD
+
     speakers: dict[str, list[str]]   # { "Rahul": ["said this", "said that"] }
 
 
@@ -35,6 +35,6 @@ class PerSpeakerSummaryResponse(BaseModel):
     bot_id: str
     transcript: str
     per_speaker_summary: dict
-=======
+
     speakers: dict[str, SpeakerInfo]  # { "Rahul Kumar": { email, utterances } }
->>>>>>> 84ce54fa2c59c182c238b90a087ab7453143c47d
+

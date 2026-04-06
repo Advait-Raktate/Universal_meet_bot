@@ -43,41 +43,6 @@ Rules:
 """
 
 
-async def summarize_meeting(formatted_transcript: str) -> str:
-    """
-    Sends transcript to GPT-4o, returns structured meeting notes as a string.
-    Expects a clean (already fixed) transcript — call fix_technical_terms() first.
-    """
-    response = await openai_client.chat.completions.create(
-        model="gpt-4o",
-        max_tokens=1500,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user",   "content": f"Here is the meeting transcript:\n\n{formatted_transcript}"}
-        ]
-    )
-    return response.choices[0].message.content
-
-
-async def summarize_per_speaker(speaker_map: dict) -> dict:
-    """
-    Sends each speaker's text to GPT-4o separately.
-    Returns a summary per person.
-    """
-    summaries = {}
-    for name, utterances in speaker_map.items():
-        combined = " ".join(utterances)
-        response = await openai_client.chat.completions.create(
-            model="gpt-4o",
-            max_tokens=500,
-            messages=[
-                {"role": "system", "content": "You are a helpful meeting assistant."},
-                {"role": "user",   "content": f"Summarize what {name} said in bullet points:\n\n{combined}"}
-            ]
-        )
-        summaries[name] = response.choices[0].message.content
-    return summaries
-
 
 async def fix_technical_terms(text: str) -> str:
     """

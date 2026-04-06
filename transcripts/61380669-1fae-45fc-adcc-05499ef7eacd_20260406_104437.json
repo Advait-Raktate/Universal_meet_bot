@@ -1,0 +1,17 @@
+{
+  "bot_id": "61380669-1fae-45fc-adcc-05499ef7eacd",
+  "timestamp": "2026-04-06T10:44:37.773073",
+  "meeting_title": "AG brain",
+  "meet_url": "https://meet.google.com/udq-vpju-imf",
+  "attendees": [
+    {
+      "email": "vaibhavi@arcitech.ai",
+      "displayName": "vaibhavi@arcitech.ai"
+    },
+    {
+      "email": "sanika@arcitech.ai",
+      "displayName": "sanika@arcitech.ai"
+    }
+  ],
+  "transcript_by_email": "[00:12] - [00:13] vaibhavi@arcitech.ai:\n  - Gud\n\n[00:13] - [00:18] sanika@arcitech.ai:\n  - After bhai. Wahi aaj hum WebSocket par fix karenge aur fir Git repository par push karenge.\n\n[00:21] - [00:26] vaibhavi@arcitech.ai:\n  - Bilkul cool sahi kaha screen recording fix higher priority hai, aaj hi deploy karna padega.\n\n[00:31] - [00:40] sanika@arcitech.ai:\n  - yes we saw the issue in the LangChain package vish hu complete complete the unit testing before the mo\n\n[00:43] - [01:00] vaibhavi@arcitech.ai:\n  - 1 aur cheez 1 aur cheez agar hum fake device use karke camera aur microphone bypass karne ki koshish kare to wo kaam nahi karega.\n\n[01:08] - [01:18] sanika@arcitech.ai:\n  - okay so we also understand the issue of screen recording and al so, then we will move to the user management updates\n\n[01:20] - [01:25] vaibhavi@arcitech.ai:\n  - requirement twenty three also needs to be relieved and son today\n\n[01:27] - [01:35] sanika@arcitech.ai:\n  - Theek hai, main abhi WebSocket fix start karti hoon. Kya tumhare paas QAT ke liye interview model ka unit testing plan ready hai?\n\n[01:36] - [01:45] vaibhavi@arcitech.ai:\n  - Yes it almost ready we will prioritize this and complete manual testing before the demo okay\n\n[01:45] - [01:47] sanika@arcitech.ai:\n  - We will see thank you."
+}

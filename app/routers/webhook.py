@@ -1,30 +1,29 @@
 """
 app/routers/webhook.py
 -----------------------
-<<<<<<< HEAD
-Receives webhook events from Recall.ai.
-When bot.done fires, runs the full pipeline automatically:
-  fetch transcript → fix Hindi/tech terms → format → LLM summarize → save notes
+Receives all webhook events from Recall.ai.
+  POST /webhook/recall — bot lifecycle events + calendar events
 """
 import json
-=======
-Receives all webhook events from Recall.ai.
-
-  POST /webhook/recall    — bot lifecycle events (bot.done, etc.)
-  POST /webhook/calendar  — calendar events (sync_events, calendar update)
-"""
-
 import os
->>>>>>> 84ce54fa2c59c182c238b90a087ab7453143c47d
 import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Request
-from app.services.recall_service import fetch_and_format_transcript, fetch_speaker_transcript
-from app.services.llm_service import summarize_meeting, summarize_per_speaker
-from datetime import datetime
-from pathlib import Path
+
+from app.services.recall_service import (
+    fetch_and_format_transcript,
+    fetch_speaker_transcript,
+    format_transcript,
+    map_names_to_emails,
+)
+from app.services.calendar_service import get_attendees_by_meet_url
+from app.services.bot_service import _schedule_bot_for_event
+from app.routers.bot import get_meet_url, get_meeting_title
+from app.services.llm_service import fix_technical_terms
+
 
 router = APIRouter()
 
@@ -43,34 +42,15 @@ RECALL_HEADERS = {
 # ─── Single Webhook — handles all Recall events ───────────────────────────────
 @router.post("/recall")
 async def recall_webhook(request: Request):
-    """
-    Single endpoint for all Recall events.
-    Register this one URL in the Recall Dashboard for everything.
-
-    bot.done              — meeting ended → extract transcript + summarize
-    calendar.sync_events  — event created / updated / deleted → schedule bot
-    calendar.update       — calendar connected / disconnected
-    """
-<<<<<<< HEAD
-    print("function called")
-=======
     body       = await request.json()
     event_type = body.get("event")
     data       = body.get("data", {})
->>>>>>> 84ce54fa2c59c182c238b90a087ab7453143c47d
 
-    body = await request.json()
     print(f"[WEBHOOK] Full body: {body}")
-
-    event_type = body.get("event")
     print(f"[WEBHOOK] Received: {event_type}")
 
     if event_type == "bot.done":
-        bot_id = body["data"]["bot"]["id"]
-<<<<<<< HEAD
-        # Run pipeline in background — return 200 to Recall immediately
-=======
->>>>>>> 84ce54fa2c59c182c238b90a087ab7453143c47d
+        bot_id = data["bot"]["id"]
         asyncio.create_task(run_pipeline(bot_id))
         return {"status": "ok"}
 
@@ -80,9 +60,24 @@ async def recall_webhook(request: Request):
         return {"ok": True}
 
     if event_type == "calendar.sync_events":
-        calendar_id     = data.get("calendar_id")
-        last_updated_ts = data.get("last_updated_ts")
+        # ← FIXED: run in background so webhook returns 200 immediately
+        # before it was blocking → caused ConnectTimeout → 500 error → double bots
+        asyncio.create_task(handle_calendar_sync(data))
+        return {"ok": True}
 
+    return {"ok": True}
+
+
+# ─── Calendar sync handler (background) ──────────────────────────────────────
+async def handle_calendar_sync(data: dict):
+    """
+    Handles calendar.sync_events in background.
+    Schedules bot for upcoming meetings found in the sync.
+    """
+    calendar_id     = data.get("calendar_id")
+    last_updated_ts = data.get("last_updated_ts")
+
+    try:
         async with httpx.AsyncClient() as client:
             res = await client.get(
                 f"{RECALL_BASE_V2}/calendar-events/",
@@ -91,20 +86,29 @@ async def recall_webhook(request: Request):
                     "calendar_id":     calendar_id,
                     "updated_at__gte": last_updated_ts,
                 },
+                timeout=30,
             )
 
         events = res.json().get("results", [])
         now    = datetime.now(timezone.utc)
 
         for event in events:
-            event_id   = event["id"]
-            meet_url   = event.get("meeting_url")
-            start_time = event.get("start_time")
-            is_deleted = event.get("is_deleted", False)
-            title      = event.get("raw", {}).get("summary", "No title")
+            event_id        = event["id"]
+            meet_url        = event.get("meeting_url")
+            start_time      = event.get("start_time")
+            is_deleted      = event.get("is_deleted", False)
+            title           = event.get("raw", {}).get("summary", "No title")
+            organizer_email = event.get("raw", {}).get("organizer", {}).get("email", "")
 
-            if not meet_url:
-                print(f"[CALENDAR WEBHOOK] Skipping '{title}' — no meeting URL")
+            # Filter 1 — only Google Meet
+            if not meet_url or not meet_url.startswith("https://meet.google.com/"):
+                print(f"[CALENDAR WEBHOOK] Skipping '{title}' — not Google Meet")
+                continue
+
+            # Filter 2 — only meetings this calendar owner organized
+            is_organizer = event.get("raw", {}).get("organizer", {}).get("self", False)
+            if not is_organizer:
+                print(f"[CALENDAR WEBHOOK] Skipping '{title}' — organizer is {organizer_email}, not calendar owner")
                 continue
 
             if is_deleted:
@@ -119,69 +123,23 @@ async def recall_webhook(request: Request):
 
             await _schedule_bot_for_event(event_id, meet_url, title)
 
-    return {"ok": True}
-
-
-# ─── Helper ───────────────────────────────────────────────────────────────────
-async def _schedule_bot_for_event(event_id: str, meet_url: str, title: str):
-    """
-    Schedules a bot for a calendar event.
-    deduplication_key = event_id ensures re-scheduling on event updates
-    doesn't create duplicate bots.
-    """
-    async with httpx.AsyncClient() as client:
-        res = await client.post(
-            f"{RECALL_BASE_V2}/calendar-events/{event_id}/bot/",
-            headers=RECALL_HEADERS,
-            json={
-                "deduplication_key": event_id,
-                "bot_config": {
-                    "bot_name":    "Notes Bot",
-                    "webhook_url": f"{PUBLIC_URL}/webhook/recall",
-                    "recording_config": {
-                        "transcript": {
-                            "provider": {
-                                "recallai_streaming": {
-                                    "language":         "en",
-                                    "identify_speaker": True,
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        )
-
-    if res.status_code in (200, 201):
-        bot_id = res.json().get("bot", {}).get("id")
-        print(f"[CALENDAR WEBHOOK] ✅ Bot scheduled for '{title}' | event={event_id} bot={bot_id}")
-    else:
-        print(f"[CALENDAR WEBHOOK] ❌ Failed to schedule bot for '{title}': {res.text}")
+    except Exception as e:
+        print(f"[CALENDAR SYNC] Error: {e}")
 
 
 # ─── Pipeline ─────────────────────────────────────────────────────────────────
 async def run_pipeline(bot_id: str):
     """
-<<<<<<< HEAD
-    Full pipeline:
-      1. Fetch raw transcript from Recall (grouped by speaker)
-      2. Format into readable text
-      3. Fix Devanagari Hindi → Hinglish + mangled tech terms (Claude)
-      4. Send clean transcript to GPT-4o for summary + action items
-      5. Save notes to JSON file (swap for DB as needed)
-=======
     Full post-meeting pipeline:
-      1. Fetch transcript from Recall (grouped by speaker)
-      2. Format into readable text
-      3. Summarize with LLM
-      4. Save notes to file
->>>>>>> 84ce54fa2c59c182c238b90a087ab7453143c47d
+      1. Fetch + format + clean transcript (Hindi fix + tech terms)
+      2. Fetch attendees from Google Calendar
+      3. Map speaker names → emails using first name fallback
+      4. Save everything to JSON
     """
     print(f"\n[PIPELINE] Starting for bot: {bot_id}")
 
     try:
-<<<<<<< HEAD
-        # Step 1+2+3 — fetch, format, and clean in one call
+        # Step 1 — fetch, format, clean transcript
         clean_transcript = await fetch_and_format_transcript(bot_id)
 
         if not clean_transcript.strip():
@@ -190,49 +148,35 @@ async def run_pipeline(bot_id: str):
 
         print(f"\n── Cleaned Transcript ───────────────────────────\n{clean_transcript}")
 
-        # Step 4 — fetch raw speaker_map separately for per-speaker summary
-        speaker_map = await fetch_speaker_transcript(bot_id)
+        # Step 2 — fetch ordered segments with timestamps
+        segments = await fetch_speaker_transcript(bot_id)
+        print(f"[DEBUG] segments count: {len(segments)}")
 
-        # Step 5 — run meeting summary + per-speaker summary simultaneously
-        print("\n[PIPELINE] Generating summaries...")
-        meeting_notes, per_speaker = await asyncio.gather(
-            summarize_meeting(clean_transcript),    # full meeting notes (clean)
-            summarize_per_speaker(speaker_map)      # per person summary
-        )
-=======
-        speaker_map = await fetch_speaker_transcript(bot_id)
-        if not speaker_map:
-            print(f"[PIPELINE] Empty transcript for {bot_id}")
-            return
+        # Step 3 — fetch attendees + meeting title
+        meet_url      = get_meet_url(bot_id)
+        meeting_title = get_meeting_title(bot_id)
+        attendees     = await get_attendees_by_meet_url(meet_url) if meet_url else []
+        print(f"[PIPELINE] meet_url={meet_url} | title={meeting_title} | attendees={attendees}")
 
-        formatted = format_transcript(speaker_map)
-        print(f"\n── Transcript ───────────────────────────\n{formatted}")
+        # Step 4 — map speaker names → emails
+        email_segments   = map_names_to_emails(segments, attendees)
+        email_transcript = format_transcript(email_segments)
+        email_transcript = await fix_technical_terms(email_transcript)
+        print(f"\n── Email Transcript ─────────────────────────────\n{email_transcript}")
 
-        notes = await summarize_meeting(formatted)
-        print(f"\n── Meeting Notes ────────────────────────\n{notes}\n")
-
-        with open(f"notes_{bot_id}.txt", "w") as f:
-            f.write("── TRANSCRIPT ──────────────────────────────────\n\n")
-            f.write(formatted)
-            f.write("\n\n── MEETING NOTES ───────────────────────────────\n\n")
-            f.write(notes)
->>>>>>> 84ce54fa2c59c182c238b90a087ab7453143c47d
-
-        print(f"\n── Meeting Notes ──\n{meeting_notes}")
-        print(f"\n── Per Speaker ──\n{per_speaker}")
-
-        # Step 6 — save as JSON file
+        # Step 5 — save to JSON
         Path("transcripts").mkdir(exist_ok=True)
-
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename  = f"transcripts/{bot_id}_{timestamp}.json"
 
         result = {
             "bot_id":              bot_id,
             "timestamp":           datetime.now().isoformat(),
-            "transcript":          clean_transcript,
-            "meeting_notes":       meeting_notes,
-            "per_speaker_summary": per_speaker,
+            "meeting_title":       meeting_title,
+            "meet_url":            meet_url,
+            "attendees":           attendees,
+           # "transcript":          clean_transcript,
+            "transcript_by_email": email_transcript,
         }
 
         with open(filename, "w", encoding="utf-8") as f:
@@ -241,9 +185,5 @@ async def run_pipeline(bot_id: str):
         print(f"\n✅ [PIPELINE] Saved: {filename}")
 
     except Exception as e:
-<<<<<<< HEAD
         print(f"[PIPELINE] Error for {bot_id}: {e}")
-        raise  # re-raise so the full traceback is visible in logs
-=======
-        print(f"[PIPELINE] Error for {bot_id}: {e}")
->>>>>>> 84ce54fa2c59c182c238b90a087ab7453143c47d
+        raise
