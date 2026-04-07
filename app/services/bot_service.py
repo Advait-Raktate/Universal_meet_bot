@@ -59,7 +59,7 @@ async def _schedule_bot_for_event(event_id: str, meet_url: str, title: str):
             json={
                 "deduplication_key": meet_url,  # ← use meet_url so same meeting never gets 2 bots
                 "bot_config": {
-                    "bot_name":    "Notes Bot",
+                    "bot_name":    "AG Brain Bot",
                     "webhook_url": f"{PUBLIC_URL}/webhook/recall",
                     "recording_config": {
                         "transcript": {

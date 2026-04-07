@@ -14,13 +14,15 @@ from app.routers import bot, webhook
 
 
 from app.routers import bot, webhook,calendar
+from app.routers import onboarding
+
 
 
 app = FastAPI(title="Meeting Bot MVP")
 
 app.include_router(bot.router,     prefix="/bot",     tags=["Bot"])
 app.include_router(webhook.router, prefix="/webhook", tags=["Webhook"])
-
+app.include_router(onboarding.router, prefix="/onboarding", tags=["Onboarding"])
 #app.include_router(auth_router)
 
 app.include_router(calendar.router, prefix="/calendar", tags=["Calendar"])
