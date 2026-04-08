@@ -181,3 +181,6 @@ async def disconnect_calendar(user_id: str = Query(...)):
         return {"message": f"✅ Disconnected calendar for user: {user_id}", "calendar_id": calendar_id}
     else:
         return {"message": f"❌ Failed to disconnect", "detail": res.text}
+
+
+        # ─── Zoom Connect ─────────────────────────────────────────────────────────────

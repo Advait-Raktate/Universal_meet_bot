@@ -39,6 +39,8 @@ RECALL_HEADERS = {
     "Content-Type":  "application/json",
 }
 
+SUPPORTED_PLATFORMS = ("https://meet.google.com/", "https://zoom.us/")
+
 
 # ─── Single Webhook — handles all Recall events ───────────────────────────────
 @router.post("/recall")
@@ -71,7 +73,7 @@ async def recall_webhook(request: Request):
 async def handle_calendar_sync(data: dict):
     """
     Handles calendar.sync_events in background.
-    Schedules bot for upcoming meetings found in the sync.
+    Schedules bot for upcoming Google Meet and Zoom meetings.
     """
     calendar_id     = data.get("calendar_id")
     last_updated_ts = data.get("last_updated_ts")
@@ -91,23 +93,24 @@ async def handle_calendar_sync(data: dict):
         events = res.json().get("results", [])
         now    = datetime.now(timezone.utc)
 
-        for event in events:
-            event_id        = event["id"]
-            meet_url        = event.get("meeting_url")
-            start_time      = event.get("start_time")
-            is_deleted      = event.get("is_deleted", False)
-            title           = event.get("raw", {}).get("summary", "No title")
-            organizer_email = event.get("raw", {}).get("organizer", {}).get("email", "")
+        for event in events:                                          # ← everything inside for loop
+            event_id   = event["id"]
+            meet_url   = event.get("meeting_url")
+            start_time = event.get("start_time")
+            is_deleted = event.get("is_deleted", False)
+            title      = event.get("raw", {}).get("summary", "No title")
 
-            # Filter 1 — only Google Meet
-            if not meet_url or not meet_url.startswith("https://meet.google.com/"):
-                print(f"[CALENDAR WEBHOOK] Skipping '{title}' — not Google Meet")
+            # Filter 1 — Google Meet and Zoom only
+            if not meet_url or not meet_url.startswith(SUPPORTED_PLATFORMS):
+                print(f"[CALENDAR WEBHOOK] Skipping '{title}' — unsupported platform")
                 continue
 
+            # Filter 2 — skip deleted events
             if is_deleted:
                 print(f"[CALENDAR WEBHOOK] Event deleted: '{title}' — bot auto-unscheduled by Recall")
                 continue
 
+            # Filter 3 — skip past events
             if start_time:
                 event_start = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
                 if event_start <= now:
@@ -124,11 +127,11 @@ async def handle_calendar_sync(data: dict):
 async def run_pipeline(bot_id: str):
     """
     Full post-meeting pipeline:
-      1. Fetch + format + clean transcript (Hindi fix + tech terms)
+      1. Fetch + format + clean transcript
       2. Fetch attendees from Google Calendar
-      3. Map speaker names → emails using first name fallback
+      3. Map speaker names → emails
       4. Send to downstream API
-      5. Save everything to JSON
+      5. Save to JSON
     """
     print(f"\n[PIPELINE] Starting for bot: {bot_id}")
 
