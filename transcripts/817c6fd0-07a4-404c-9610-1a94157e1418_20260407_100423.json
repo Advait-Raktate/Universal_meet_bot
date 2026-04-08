@@ -1,0 +1,17 @@
+{
+  "bot_id": "817c6fd0-07a4-404c-9610-1a94157e1418",
+  "timestamp": "2026-04-07T10:04:23.062509",
+  "meeting_title": "A",
+  "meet_url": "https://meet.google.com/uyb-pptq-eaf",
+  "attendees": [
+    {
+      "email": "vaibhavi@arcitech.ai",
+      "displayName": "vaibhavi@arcitech.ai"
+    },
+    {
+      "email": "sanika@arcitech.ai",
+      "displayName": "sanika@arcitech.ai"
+    }
+  ],
+  "transcript_by_email": "[00:00] - [00:30] sanika@arcitech.ai:\n  - Ra. Sarah.\n\n[00:49] - [00:51] vaibhavi@arcitech.ai:\n  - Hello? Hello?\n\n[00:56] - [00:56] sanika@arcitech.ai:\n  - Yeah.\n\n[00:58] - [01:22] vaibhavi@arcitech.ai:\n  - Hello. Yes. Yes. What are you doing? Okay. Have you done with the\n\n[01:22] - [01:23] sanika@arcitech.ai:\n  - work?\n\n[01:49] - [01:50] vaibhavi@arcitech.ai:\n  - Okay."
+}

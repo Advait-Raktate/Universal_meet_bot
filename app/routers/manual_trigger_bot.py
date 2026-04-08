@@ -12,7 +12,7 @@ import json
 import asyncio
 from pathlib import Path
 from fastapi import APIRouter
-from app.schemas.schemas import JoinMeetingRequest, JoinMeetingResponse, MeetingNotesResponse
+from app.models.schemas import JoinMeetingRequest, JoinMeetingResponse, MeetingNotesResponse, PerSpeakerSummaryResponse
 from app.services.recall_service import create_bot, fetch_speaker_transcript, format_transcript
 #from app.services.llm_service import summarize_meeting, summarize_per_speaker
 

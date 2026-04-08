@@ -1,0 +1,17 @@
+{
+  "bot_id": "6f764eca-2048-4184-be49-679f6932e904",
+  "timestamp": "2026-04-08T05:09:31.970282",
+  "meeting_title": "A",
+  "meet_url": "https://meet.google.com/vyh-beee-bdz",
+  "attendees": [
+    {
+      "email": "vaibhavi@arcitech.ai",
+      "displayName": "vaibhavi@arcitech.ai"
+    },
+    {
+      "email": "sanika@arcitech.ai",
+      "displayName": "sanika@arcitech.ai"
+    }
+  ],
+  "transcript_by_email": "Transcript:\n[03:51] - [04:43] sanika@arcitech.ai:\n  - Samples. Was like. It."
+}

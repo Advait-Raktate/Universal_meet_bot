@@ -17,13 +17,14 @@ from app.services.recall_service import (
     fetch_and_format_transcript,
     fetch_speaker_transcript,
     format_transcript,
+    format_transcript_with_timestamps,
     map_names_to_emails,
 )
+from app.services.llm_service import fix_technical_terms
 from app.services.calendar_service import get_attendees_by_meet_url
 from app.services.bot_service import _schedule_bot_for_event
 from app.routers.bot import get_meet_url, get_meeting_title
-from app.services.llm_service import fix_technical_terms
-
+from app.services.helper import _send_to_downstream
 
 router = APIRouter()
 
@@ -60,8 +61,6 @@ async def recall_webhook(request: Request):
         return {"ok": True}
 
     if event_type == "calendar.sync_events":
-        # ← FIXED: run in background so webhook returns 200 immediately
-        # before it was blocking → caused ConnectTimeout → 500 error → double bots
         asyncio.create_task(handle_calendar_sync(data))
         return {"ok": True}
 
@@ -105,12 +104,6 @@ async def handle_calendar_sync(data: dict):
                 print(f"[CALENDAR WEBHOOK] Skipping '{title}' — not Google Meet")
                 continue
 
-            # Filter 2 — only meetings this calendar owner organized
-            is_organizer = event.get("raw", {}).get("organizer", {}).get("self", False)
-            if not is_organizer:
-                print(f"[CALENDAR WEBHOOK] Skipping '{title}' — organizer is {organizer_email}, not calendar owner")
-                continue
-
             if is_deleted:
                 print(f"[CALENDAR WEBHOOK] Event deleted: '{title}' — bot auto-unscheduled by Recall")
                 continue
@@ -134,7 +127,8 @@ async def run_pipeline(bot_id: str):
       1. Fetch + format + clean transcript (Hindi fix + tech terms)
       2. Fetch attendees from Google Calendar
       3. Map speaker names → emails using first name fallback
-      4. Save everything to JSON
+      4. Send to downstream API
+      5. Save everything to JSON
     """
     print(f"\n[PIPELINE] Starting for bot: {bot_id}")
 
@@ -159,10 +153,22 @@ async def run_pipeline(bot_id: str):
         print(f"[PIPELINE] meet_url={meet_url} | title={meeting_title} | attendees={attendees}")
 
         # Step 4 — map speaker names → emails
-        email_segments   = map_names_to_emails(segments, attendees)
-        email_transcript = format_transcript(email_segments)
+        email_segments = map_names_to_emails(segments, attendees)
+
+        # for downstream API — simple format + Hindi fix
+        simple_transcript = format_transcript(email_segments)
+        simple_transcript = await fix_technical_terms(simple_transcript)
+
+        # for JSON file — timestamped format + Hindi fix
+        email_transcript = format_transcript_with_timestamps(email_segments)
         email_transcript = await fix_technical_terms(email_transcript)
         print(f"\n── Email Transcript ─────────────────────────────\n{email_transcript}")
+
+        # Step 4b — send to downstream API
+        await _send_to_downstream({
+            "project_name":  meeting_title,
+            "transcription": simple_transcript,
+        })
 
         # Step 5 — save to JSON
         Path("transcripts").mkdir(exist_ok=True)
@@ -175,7 +181,6 @@ async def run_pipeline(bot_id: str):
             "meeting_title":       meeting_title,
             "meet_url":            meet_url,
             "attendees":           attendees,
-           # "transcript":          clean_transcript,
             "transcript_by_email": email_transcript,
         }
 

@@ -42,7 +42,7 @@ async def create_bot(meet_url: str, bot_name: str) -> dict:
                     "assembly_ai_async_chunked": {
                         "speaker_labels":     True,
                         "language_detection": True,
-                        "speech_model":       "universal-3-pro",
+                        #"speech_model":       "universal-3-pro",
                         "format_text":        True,
                         "punctuate":          True,
                         "keyterms_prompt":    [],
@@ -274,3 +274,18 @@ async def fetch_and_format_transcript(bot_id: str) -> str:
     print("[TRANSCRIPT] Cleaned transcript:\n", clean_transcript)
 
     return clean_transcript
+
+def format_transcript_with_timestamps(segments: list[dict]) -> str:
+    """
+    Timestamped format for JSON file.
+    [00:13] - [00:18] sanika@arcitech.ai:
+      - Hello good morning
+    """
+    if not segments:
+        return ""
+    lines = []
+    for seg in segments:
+        lines.append(f"{seg['start']} - {seg['end']} {seg['name']}:")
+        lines.append(f"  - {seg['text']}")
+        lines.append("")
+    return "\n".join(lines)
