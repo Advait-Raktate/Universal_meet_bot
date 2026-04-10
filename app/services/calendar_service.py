@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 from app.services.recall_service import RECALL_HEADERS, RECALL_BASE_V2
 
 
+bot_map = {}
+
 load_dotenv()
 
 RECALL_API_KEY = os.getenv("RECALL_API_KEY")
@@ -17,20 +19,21 @@ RECALL_HEADERS = {
 
 
 async def get_attendees_by_meet_url(meet_url: str) -> list[dict]:
-    all_events = []
-    url = f"{RECALL_BASE_V2}/calendar-events/"
-
     async with httpx.AsyncClient() as client:
-        while url:
-            res = await client.get(url, headers=RECALL_HEADERS)
-            data = res.json()
-            all_events.extend(data.get("results", []))
-            url = data.get("next")  # ← follow next page if exists
+        res = await client.get(
+            f"{RECALL_BASE_V2}/calendar-events/",
+            headers=RECALL_HEADERS,
+            params={"meeting_url": meet_url},
+            timeout=30,
+        )
 
-    matched = next((e for e in all_events if e.get("meeting_url") == meet_url), None)
+    data    = res.json()
+    results = data.get("results", [])   
+    matched = next((e for e in results if e.get("meeting_url") == meet_url), None)
+
 
     print(f"[CALENDAR] Looking for meet_url: {meet_url}")
-    print(f"[CALENDAR] Total events searched: {len(all_events)}")
+    print(f"[CALENDAR] Total events searched: {len(results)}")
     print(f"[CALENDAR] Matched event: {matched}")
 
     if not matched:

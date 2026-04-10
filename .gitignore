@@ -8,3 +8,4 @@ venv/
 *.pyc
 __pycache__/
 cloudflared-linux-amd64.deb
+.env
