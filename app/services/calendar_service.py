@@ -19,21 +19,27 @@ RECALL_HEADERS = {
 
 
 async def get_attendees_by_meet_url(meet_url: str) -> list[dict]:
+    matched = None
+    url     = f"{RECALL_BASE_V2}/calendar-events/"
+    total   = 0
     async with httpx.AsyncClient() as client:
-        res = await client.get(
-            f"{RECALL_BASE_V2}/calendar-events/",
-            headers=RECALL_HEADERS,
-            params={"meeting_url": meet_url},
-            timeout=30,
-        )
+        while url:
+            res     = await client.get(url, headers=RECALL_HEADERS, timeout=30)
+            data    = res.json()
+            results = data.get("results", [])
+            total  += len(results)
 
-    data    = res.json()
-    results = data.get("results", [])   
-    matched = next((e for e in results if e.get("meeting_url") == meet_url), None)
+            # ✅ search each page for correct event
+            matched = next(
+                (e for e in results if e.get("meeting_url") == meet_url), None
+            )
+            if matched:
+                break  # ← stop when found
 
+            url = data.get("next")  # ← go to next page
 
     print(f"[CALENDAR] Looking for meet_url: {meet_url}")
-    print(f"[CALENDAR] Total events searched: {len(results)}")
+    print(f"[CALENDAR] Total events searched: {total}")
     print(f"[CALENDAR] Matched event: {matched}")
 
     if not matched:
