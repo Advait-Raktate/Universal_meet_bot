@@ -2,6 +2,7 @@ fastapi
 uvicorn
 httpx
 openai
-python-dotenvpydantic==2.12.5
+python-dotenv
+pydantic==2.12.5
 pydantic-settings==2.13.1
 pydantic_core==2.41.5
