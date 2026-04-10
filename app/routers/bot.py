@@ -8,6 +8,7 @@ Endpoints:
   GET  /bot/{bot_id}/transcript — get raw transcript
 """
 
+
 import json
 import asyncio
 from pathlib import Path
@@ -19,6 +20,8 @@ from app.services.recall_service import create_bot, fetch_speaker_transcript, fo
 router = APIRouter()
 
 # ─── Persistent bot store (survives server restarts) ─────────────────────────
+
+"""
 BOT_STORE_FILE = Path("bot_store.json")
 
 def save_bot_store(bot_id: str, meet_url: str, title: str = ""):
@@ -28,6 +31,8 @@ def save_bot_store(bot_id: str, meet_url: str, title: str = ""):
     store[bot_id] = {"meet_url": meet_url, "title": title}
     BOT_STORE_FILE.write_text(json.dumps(store, indent=2))
 
+    
+
 def get_meet_url(bot_id: str) -> str:
     if not BOT_STORE_FILE.exists():
         return ""
@@ -35,12 +40,17 @@ def get_meet_url(bot_id: str) -> str:
     entry = store.get(bot_id, {})
     return entry.get("meet_url", "") if isinstance(entry, dict) else entry
 
+    
+
 def get_meeting_title(bot_id: str) -> str:
     if not BOT_STORE_FILE.exists():
         return ""
     store = json.loads(BOT_STORE_FILE.read_text())
     entry = store.get(bot_id, {})
     return entry.get("title", "") if isinstance(entry, dict) else ""
+
+
+    """
 
 
 # ─── Join meeting ─────────────────────────────────────────────────────────────

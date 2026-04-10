@@ -4,11 +4,10 @@ app/routers/webhook.py
 Receives all webhook events from Recall.ai.
   POST /webhook/recall — bot lifecycle events + calendar events
 """
-import json
 import os
 import asyncio
 from datetime import datetime, timezone
-from pathlib import Path
+
 
 import httpx
 from fastapi import APIRouter, Request
@@ -20,10 +19,10 @@ from app.services.recall_service import (
     format_transcript_with_timestamps,
     map_names_to_emails,
 )
-from app.services.llm_service import fix_technical_terms
+#from app.services.llm_service import fix_technical_terms
+from app.services.recall_service import get_meet_url_from_bot
 from app.services.calendar_service import get_attendees_by_meet_url
 from app.services.bot_service import _schedule_bot_for_event
-from app.routers.bot import get_meet_url, get_meeting_title
 from app.services.helper import _send_to_downstream
 
 router = APIRouter()
@@ -53,8 +52,17 @@ async def recall_webhook(request: Request):
     print(f"[WEBHOOK] Received: {event_type}")
 
     if event_type == "bot.done":
-        bot_id = data["bot"]["id"]
-        asyncio.create_task(run_pipeline(bot_id))
+        bot_id   = data["bot"]["id"]                 # ← add this first
+        metadata = data["bot"].get("metadata", {})
+        title    = metadata.get("title", "")
+        meet_url = metadata.get("meet_url", "")
+
+        if not meet_url:
+            print(f"[WEBHOOK] metadata empty — fetching from Recall")
+            meet_url, title = await get_meet_url_from_bot(bot_id)  # ← meet_url first, title second
+
+        print(f"[WEBHOOK] bot_id={bot_id} | meet_url={meet_url} | title={title}")
+        asyncio.create_task(run_pipeline(bot_id, meet_url, title))
         return {"status": "ok"}
 
     if event_type == "calendar.update":
@@ -124,7 +132,7 @@ async def handle_calendar_sync(data: dict):
 
 
 # ─── Pipeline ─────────────────────────────────────────────────────────────────
-async def run_pipeline(bot_id: str):
+async def run_pipeline(bot_id: str, meet_url: str = "", meeting_title: str = ""):
     """
     Full post-meeting pipeline:
       1. Fetch + format + clean transcript
@@ -134,24 +142,24 @@ async def run_pipeline(bot_id: str):
       5. Save to JSON
     """
     print(f"\n[PIPELINE] Starting for bot: {bot_id}")
-
     try:
         # Step 1 — fetch, format, clean transcript
-        clean_transcript = await fetch_and_format_transcript(bot_id)
+        #clean_transcript = await fetch_and_format_transcript(bot_id)
 
-        if not clean_transcript.strip():
-            print(f"[PIPELINE] Empty transcript for {bot_id}")
-            return
-
-        print(f"\n── Cleaned Transcript ───────────────────────────\n{clean_transcript}")
 
         # Step 2 — fetch ordered segments with timestamps
         segments = await fetch_speaker_transcript(bot_id)
         print(f"[DEBUG] segments count: {len(segments)}")
 
+
+        # ✅ empty check
+        if not segments:
+            print(f"[PIPELINE] Empty transcript for {bot_id}")
+            return
+
         # Step 3 — fetch attendees + meeting title
-        meet_url      = get_meet_url(bot_id)
-        meeting_title = get_meeting_title(bot_id)
+        #meet_url      = get_meet_url(bot_id)
+        #meeting_title = get_meeting_title(bot_id)
         attendees     = await get_attendees_by_meet_url(meet_url) if meet_url else []
         print(f"[PIPELINE] meet_url={meet_url} | title={meeting_title} | attendees={attendees}")
 
@@ -160,11 +168,11 @@ async def run_pipeline(bot_id: str):
 
         # for downstream API — simple format + Hindi fix
         simple_transcript = format_transcript(email_segments)
-        simple_transcript = await fix_technical_terms(simple_transcript)
+        #simple_transcript = await fix_technical_terms(simple_transcript)
 
         # for JSON file — timestamped format + Hindi fix
         email_transcript = format_transcript_with_timestamps(email_segments)
-        email_transcript = await fix_technical_terms(email_transcript)
+        #email_transcript = await fix_technical_terms(email_transcript)
         print(f"\n── Email Transcript ─────────────────────────────\n{email_transcript}")
 
         # Step 4b — send to downstream API
@@ -172,25 +180,6 @@ async def run_pipeline(bot_id: str):
             "project_name":  meeting_title,
             "transcription": simple_transcript,
         })
-
-        # Step 5 — save to JSON
-        Path("transcripts").mkdir(exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename  = f"transcripts/{bot_id}_{timestamp}.json"
-
-        result = {
-            "bot_id":              bot_id,
-            "timestamp":           datetime.now().isoformat(),
-            "meeting_title":       meeting_title,
-            "meet_url":            meet_url,
-            "attendees":           attendees,
-            "transcript_by_email": email_transcript,
-        }
-
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
-
-        print(f"\n✅ [PIPELINE] Saved: {filename}")
 
     except Exception as e:
         print(f"[PIPELINE] Error for {bot_id}: {e}")

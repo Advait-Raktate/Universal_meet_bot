@@ -103,8 +103,7 @@ async def google_oauth_callback(code: str = Query(...)):
     print(f"[CALENDAR] Connected: {email}")
 
     # Step 4 — redirect to success page with email
-    return RedirectResponse(url=f"/onboarding/success?email={email}")
-
+    return {"message": "Calendar connected ✅", "email": email}
     
 
 # ─── Check connection status ──────────────────────────────────────────────────

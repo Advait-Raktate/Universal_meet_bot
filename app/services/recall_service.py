@@ -9,6 +9,8 @@ import os
 import asyncio
 import httpx
 from dotenv import load_dotenv
+#from app.services.recall_service import RECALL_HEADERS, RECALL_BASE_V2
+
 
 load_dotenv()
 
@@ -17,7 +19,10 @@ RECALL_REGION  = os.getenv("RECALL_REGION", "us-west-2")
 RECALL_BASE    = f"https://{RECALL_REGION}.recall.ai/api/v1"
 PUBLIC_URL     = os.getenv("PUBLIC_URL")
 
-HEADERS = {
+RECALL_BASE_V2 = f"https://{RECALL_REGION}.recall.ai/api/v2"
+
+
+RECALL_HEADERS = {
     "Authorization": f"Token {RECALL_API_KEY}",
     "Accept":        "application/json",
 }
@@ -92,7 +97,7 @@ async def get_download_url(bot_id: str) -> str:
         async with httpx.AsyncClient() as client:
             r = await client.get(
                 f"{RECALL_BASE}/bot/{bot_id}/",
-                headers=HEADERS,
+                headers=RECALL_HEADERS,
                 timeout=30
             )
              # bot not found — likely created with different API key
@@ -258,7 +263,7 @@ async def fetch_and_format_transcript(bot_id: str) -> str:
       3. Fix Hindi → Hinglish + tech terms via GPT-4o
       4. Return clean LLM-ready transcript string
     """
-    from app.services.llm_service import fix_technical_terms
+    #from app.services.llm_service import fix_technical_terms
 
     segments      = await fetch_speaker_transcript(bot_id)
     raw_formatted = format_transcript(segments)
@@ -269,11 +274,8 @@ async def fetch_and_format_transcript(bot_id: str) -> str:
         print("[TRANSCRIPT] Empty transcript — skipping fix_technical_terms")
         return ""
 
-    clean_transcript = await fix_technical_terms(raw_formatted)
+        return raw_formatted 
 
-    print("[TRANSCRIPT] Cleaned transcript:\n", clean_transcript)
-
-    return clean_transcript
 
 def format_transcript_with_timestamps(segments: list[dict]) -> str:
     """
@@ -289,3 +291,26 @@ def format_transcript_with_timestamps(segments: list[dict]) -> str:
         lines.append(f"  - {seg['text']}")
         lines.append("")
     return "\n".join(lines)
+
+
+async def get_meet_url_from_bot(bot_id: str) -> tuple[str, str]:
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            f"{RECALL_BASE_V1}/bot/{bot_id}/",
+            headers=RECALL_HEADERS,
+            timeout=30
+        )
+
+    if res.status_code != 200 or not res.content:
+        print(f"[BOT] Failed to fetch bot {bot_id}: {res.status_code}")
+        return "", ""
+
+    try:
+        data = res.json()
+    except Exception as e:
+        print(f"[BOT] JSON parse error: {e}")
+        return "", ""
+
+    meet_url = data.get("meeting_url", "")
+    title    = data.get("metadata", {}).get("title", "")
+    return meet_url, title  # ← returns tuple

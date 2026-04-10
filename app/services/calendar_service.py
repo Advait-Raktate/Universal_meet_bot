@@ -1,6 +1,8 @@
 import os
 import httpx
 from dotenv import load_dotenv
+from app.services.recall_service import RECALL_HEADERS, RECALL_BASE_V2
+
 
 load_dotenv()
 

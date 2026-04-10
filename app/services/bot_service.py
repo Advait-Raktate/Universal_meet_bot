@@ -3,6 +3,8 @@ import asyncio
 import httpx
 from fastapi import HTTPException
 from dotenv import load_dotenv
+from app.services.recall_service import RECALL_HEADERS, RECALL_BASE_V2
+
 
 load_dotenv()
 
@@ -74,6 +76,10 @@ async def _schedule_bot_for_event(event_id: str, meet_url: str, title: str):
                     "deduplication_key": meet_url,
                     "bot_config": {
                         "bot_name":    "AG Brain Bot",
+                        "metadata": {                    # ← store title here
+                            "title":    title,
+                            "meet_url": meet_url,
+                        },
                         "webhook_url": f"{PUBLIC_URL}/webhook/recall",
                         "recording_config": {
                             "transcript": {
@@ -101,8 +107,6 @@ async def _schedule_bot_for_event(event_id: str, meet_url: str, title: str):
             bot_id = data.get("bots", [{}])[0].get("bot_id")
 
             if bot_id:
-                from app.routers.bot import save_bot_store
-                save_bot_store(bot_id, meet_url, title)
                 print(f"[BOT SERVICE] ✅ Saved bot_id={bot_id} → meet_url={meet_url} title={title}")
             else:
                 print(f"[BOT SERVICE] ❌ Could not extract bot_id from response: {data}")
