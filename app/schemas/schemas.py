@@ -1,3 +1,4 @@
+
 from pydantic import BaseModel
 from typing import Optional
 
@@ -25,4 +26,4 @@ class SpeakerInfo(BaseModel):
 
 class SpeakerTranscript(BaseModel):
     bot_id:   str
-    speakers: dict[str, SpeakerInfo]  # { "Rahul Kumar": { email, utterances } }
+    speakers: dict[str, SpeakerInfo] | None = None # { "Rahul Kumar": { email, utterances } }

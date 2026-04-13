@@ -1,43 +1,29 @@
+
 """
 app/routers/webhook.py
 -----------------------
 Receives all webhook events from Recall.ai.
-
-  POST /webhook/recall    — bot lifecycle events (bot.done, etc.)
-  POST /webhook/calendar  — calendar events (sync_events, calendar update)
+  POST /webhook/recall — bot lifecycle events + calendar events
 """
-
+import json
+#import os
 import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Request
 
-from app.core.config import settings
-from app.services.helper import _schedule_bot_for_event, _send_to_downstream, _fetch_bot_title
+from app.services.calendar_service import get_attendees_by_meet_url
+from app.services.helper import _schedule_bot_for_event,_fetch_bot_title
+from app.services.recall_service import format_transcript , fetch_speaker_transcript
 from app.services.transcription_pipeline import run_pipeline
+from app.core.config import settings
 
 router = APIRouter()
 
-# Usage examples (replace your old CONFIG block with these):
-# settings.recall_base_v1
-# settings.recall_base_v2
-# settings.recall_headers
-# settings.public_url
-# settings.downstream_api
-
-
-# ─── Single Webhook — handles all Recall events ───────────────────────────────
 @router.post("/recall")
 async def recall_webhook(request: Request):
-    """
-    Single endpoint for all Recall events.
-    Register this one URL in the Recall Dashboard for everything.
-
-    bot.done              — meeting ended → extract transcript + summarize
-    calendar.sync_events  — event created / updated / deleted → schedule bot
-    calendar.update       — calendar connected / disconnected
-    """
     body       = await request.json()
     event_type = body.get("event")
     data       = body.get("data", {})
@@ -46,38 +32,44 @@ async def recall_webhook(request: Request):
 
     if event_type == "bot.done":
         bot_id = data["bot"]["id"]
+        meet_url = data.get("bot", {}).get("meeting_url", "")
 
         meeting_title = (
             data.get("bot", {}).get("meeting_metadata", {}).get("title")
             or data.get("bot", {}).get("metadata", {}).get("meeting_title")
             or ""
         )
-
-        # 2. If not in payload, fetch from bot metadata API (FALLBACK BASICALLY)
         if not meeting_title:
             meeting_title = await _fetch_bot_title(bot_id)
-        print(f"[WEBHOOK] Meeting title resolved: '{meeting_title}'")
-        
-        asyncio.create_task(run_pipeline(bot_id, meeting_title))
-        return {"status": "ok"}
 
-    if event_type == "calendar.update":
-        calendar_id = data.get("calendar_id")
-        print(f"[CALENDAR WEBHOOK] Calendar updated: {calendar_id}")
+        # extract attendee_emails stored at schedule time
+        attendee_emails_str = data.get("bot", {}).get("metadata", {}).get("attendee_emails", "")
+        attendee_emails     = attendee_emails_str.split(",") if attendee_emails_str else []
+
+        print(f"[WEBHOOK] Meeting title: '{meeting_title}'  | attendees: {attendee_emails}")
+        asyncio.create_task(run_pipeline(bot_id, meeting_title, meet_url ,attendee_emails))
+        return {"status": "ok"}
+        
+    if event_type == "calendar.sync_events":
+        # run in background so webhook returns 200 immediately
+        asyncio.create_task(handle_calendar_sync(data))
         return {"ok": True}
 
-    if event_type == "calendar.sync_events":
-        calendar_id     = data.get("calendar_id")
-        last_updated_ts = data.get("last_updated_ts")
+    if event_type == "calendar.update":
+        print(f"[CALENDAR WEBHOOK] Calendar updated: {data.get('calendar_id')}")
+        return {"ok": True}
 
+    return {"ok": True}
+# ─── Calendar sync handler (background) ──────────────────────────────────────
+async def handle_calendar_sync(data: dict):
+    calendar_id = data.get("calendar_id")
+
+    try:
         async with httpx.AsyncClient() as client:
             res = await client.get(
                 f"{settings.recall_base_v2}/calendar-events/",
                 headers=settings.recall_headers_accept,
-                params={
-                    "calendar_id":     calendar_id,
-                    "updated_at__gte": last_updated_ts,
-                },
+                params={"calendar_id": calendar_id},  # no updated_at filter
             )
 
         events = res.json().get("results", [])
@@ -90,12 +82,14 @@ async def recall_webhook(request: Request):
             is_deleted = event.get("is_deleted", False)
             title      = event.get("raw", {}).get("summary", "No title")
 
+            print(f"[DEBUG] event: title={title} | meet_url={meet_url} | start={start_time}")
+
             if not meet_url:
                 print(f"[CALENDAR WEBHOOK] Skipping '{title}' — no meeting URL")
                 continue
 
             if is_deleted:
-                print(f"[CALENDAR WEBHOOK] Event deleted: '{title}' — bot auto-unscheduled by Recall")
+                print(f"[CALENDAR WEBHOOK] Deleted: '{title}'")
                 continue
 
             if start_time:
@@ -106,7 +100,5 @@ async def recall_webhook(request: Request):
 
             await _schedule_bot_for_event(event_id, meet_url, title)
 
-    return {"ok": True}
-
-
-        
+    except Exception as e:
+        print(f"[CALENDAR SYNC] Error: {e}")

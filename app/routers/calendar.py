@@ -1,4 +1,5 @@
 
+
 """
 app/routers/calendar.py
 -----------------------
@@ -35,6 +36,7 @@ async def connect_google_calendar():
     }
     query_string    = "&".join(f"{k}={v}" for k, v in params.items())
     google_auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{query_string}"
+
     return RedirectResponse(url=google_auth_url)
 
 
@@ -145,38 +147,3 @@ async def list_calendar_events():
         }
         for e in events if e.get("meeting_url")
     ]
-
-
-# ─── Manual schedule by Meet URL (kept for ad-hoc use) ───────────────────────
-@router.post("/schedule")
-async def schedule_bot_by_meet_url(meet_url: str = Query(...)):
-    """
-    Manual fallback — useful for testing or scheduling a specific meeting.
-    For normal usage, bots are auto-scheduled via the webhook.
-    """
-    async with httpx.AsyncClient() as client:
-        res = await client.get(
-            f"{settings.recall_base_v2}/calendar-events/",
-            headers=settings.recall_headers_accept,
-        )
-
-    events  = res.json().get("results", [])
-    matched = next((e for e in events if e.get("meeting_url") == meet_url), None)
-
-    if not matched:
-        raise HTTPException(
-            status_code=404,
-            detail="No calendar event found for this Meet URL. Make sure the event exists on your connected Google Calendar."
-        )
-
-    event_id = matched["id"]
-    title    = matched.get("raw", {}).get("summary", "No title")
-
-    await _schedule_bot_for_event(event_id, meet_url, title)
-
-    return {
-        "message":   "Bot scheduled ✅ — will auto-join at meeting start time",
-        "meet_url":  meet_url,
-        "event_id":  event_id,
-        "attendees": [a.get("email") for a in matched.get("raw", {}).get("attendees", [])],
-    }

@@ -1,36 +1,106 @@
-from datetime import datetime, timezone
 
-from app.services.recall_service import fetch_speaker_transcript, format_transcript
-from app.services.helper import _schedule_bot_for_event,_send_to_downstream,_fetch_bot_title
+"""
+services/transcription_pipeline.py
+"""
+from app.services.recall_service import(
+    get_download_url,
+    download_raw_transcript,
+    seconds_to_mmss,
+    map_names_to_emails,
+    format_transcript,
+)
 
-async def run_pipeline(bot_id: str, meeting_title: str = ""):
+from app.services.calendar_service import get_attendees_by_meet_url
+from app.services.helper import _send_to_downstream
+
+
+def _parse_segments(raw: list[dict]) -> list[dict]:
     """
-    Full post-meeting pipeline:
-      1. Resolve meeting title (payload → bot metadata API → fallback)
-      2. Fetch transcript from Recall (grouped by speaker)
-      3. Format into readable text
-      4. Summarize with LLM, passing the title for context
-      5. Save notes to file named after the meeting
+    Parses raw AssemblyAI transcript into segments with timestamps.
+    Raw format from Recall:
+    [
+        {
+            "participant": {"name": "Sanika"},
+            "words": [
+                {"text": "Hello", "start_timestamp": {"relative": 1.2}, ...},
+                ...
+            ]
+        },
+        ...
+    ]
+    Output:
+    [
+        {"name": "Sanika", "text": "Hello everyone", "start": "[00:01]", "end": "[00:05]"},
+        ...
+    ]
     """
-    print(f"\n[PIPELINE] Starting for bot: {bot_id}")
-
-    
-    print(f"[PIPELINE] Meeting title: {meeting_title}")
+    segments = []
+    for segment in raw:
+        name  = segment.get("participant", {}).get("name") or "Unknown"
+        words = segment.get("words", [])
+        if not words:
+            continue
+        text       = " ".join(w["text"] for w in words).strip()
+        start_secs = words[0].get("start_timestamp", {}).get("relative", 0)
+        end_secs   = words[-1].get("end_timestamp",  {}).get("relative", start_secs)
+        if text:
+            segments.append({
+                "name":  name,
+                "text":  text,
+                "start": seconds_to_mmss(start_secs),
+                "end":   seconds_to_mmss(end_secs),
+            })
+    return segments
+async def run_pipeline(bot_id: str, meeting_title: str = "", meet_url: str = "" , attendee_emails: list = []):
+    """
+    Full post-meeting pipeline for any platform (GMeet, Zoom, Teams):
+      1. Fetch raw AssemblyAI transcript from Recall
+      2. Parse into segments with timestamps
+      3. Fetch attendees from calendar
+      4. Map speaker names → emails
+      5. Format transcript
+      6. Send to downstream API
+    """
+    print(f"\n[PIPELINE] Starting for bot: {bot_id} | title: {meeting_title}")
 
     try:
-        segments = await fetch_speaker_transcript(bot_id)
-        if not segments:
+        # Step 1 — fetch raw transcript from Recall/AssemblyAI
+        download_url = await get_download_url(bot_id)
+        raw          = await download_raw_transcript(download_url)
+
+        if not raw:
             print(f"[PIPELINE] Empty transcript for {bot_id}")
             return
-        speaker_map = format_transcript(segments) 
-        payload = {
-            "project_name":  meeting_title,
-            "transcription": speaker_map,
-        }
-        print(payload)
-        # ✅ Pass the title to summarize_meeting so the LLM has context
-        await _send_to_downstream(payload)
+
+        print(f"[PIPELINE] Raw segments count: {len(raw)}")
+
+        # Step 2 — parse raw into segments with timestamps
+        segments = _parse_segments(raw)
+
+
+         # Step 3 — build attendees from pre-fetched emails
+        attendees = [{"email": e, "displayName": e.split("@")[0]} for e in attendee_emails if e]
+        print(f"[PIPELINE] Attendees: {[a['email'] for a in attendees]}")
+
         
+
+
+        # Step 4 — map speaker names → emails
+        email_segments = map_names_to_emails(segments, attendees)
+
+        # Step 5 — format into readable transcript
+        email_transcript = format_transcript(email_segments)
+        print(f"\n── Transcript ───────────────────────────\n{email_transcript}")
+
+        # Step 6 — send to downstream
+        await _send_to_downstream({
+            "project_name":  meeting_title,
+            "transcription": email_transcript,
+        })
+
+        print(f"\n✅ [PIPELINE] Done for bot: {bot_id}")
+
     except Exception as e:
         print(f"[PIPELINE] Error for {bot_id}: {e}")
-        
+        raise
+

@@ -1,3 +1,4 @@
+
 """
 main.py
 -------
@@ -16,10 +17,7 @@ app = FastAPI(
     debug=settings.debug,
 )
 
-app.include_router(manual_trigger_bot.router, prefix="/bot", tags=["Bot"])
-app.include_router(webhook.router,  prefix="/webhook",  tags=["Webhook"])
+app.include_router(manual_trigger_bot.router,     prefix="/bot",     tags=["Bot"])
+app.include_router(webhook.router, prefix="/webhook", tags=["Webhook"])
 app.include_router(calendar.router, prefix="/calendar", tags=["Calendar"])
 
-@app.get("/health")
-async def health():
-    return {"status": "ok", "environment": settings.environment}
