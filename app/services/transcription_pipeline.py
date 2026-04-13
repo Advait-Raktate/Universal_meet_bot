@@ -1,9 +1,6 @@
+
 """
 services/transcription_pipeline.py
-------------------------------------
-Post-meeting pipelines.
-  run_pipeline_zoom()   — Zoom: fetch → format → send downstream
-  run_pipeline_gmeet()  — GMeet: fetch → clean → map emails → save JSON
 """
 from app.services.recall_service import(
     get_download_url,
@@ -106,3 +103,4 @@ async def run_pipeline(bot_id: str, meeting_title: str = "", meet_url: str = "" 
     except Exception as e:
         print(f"[PIPELINE] Error for {bot_id}: {e}")
         raise
+

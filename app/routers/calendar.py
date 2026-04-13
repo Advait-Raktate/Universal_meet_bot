@@ -1,4 +1,5 @@
 
+
 """
 app/routers/calendar.py
 -----------------------
@@ -146,4 +147,3 @@ async def list_calendar_events():
         }
         for e in events if e.get("meeting_url")
     ]
-
