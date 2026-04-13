@@ -1,3 +1,4 @@
+
 """
 app/routers/webhook.py
 -----------------------
@@ -61,7 +62,6 @@ async def recall_webhook(request: Request):
     return {"ok": True}
 # ─── Calendar sync handler (background) ──────────────────────────────────────
 async def handle_calendar_sync(data: dict):
-    print("Inside calendar sync handler...")
     calendar_id = data.get("calendar_id")
 
     try:

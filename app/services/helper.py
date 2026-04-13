@@ -5,6 +5,7 @@ from fastapi import APIRouter, Request
 from app.core.config import settings
 from app.services.recall_service import fetch_speaker_transcript, format_transcript
 
+
 async def schedule_bot_by_meet_url(meet_url: str):
     """
     Manual fallback — useful for testing or scheduling a specific meeting.
@@ -40,6 +41,7 @@ async def _schedule_bot_for_event(event_id: str, meet_url: str, title: str):
     deduplication_key = event_id ensures re-scheduling on event updates
     doesn't create duplicate bots.
     """
+
      # fetch attendees now while event still exists
     from app.services.calendar_service import get_attendees_by_meet_url
     attendees = await get_attendees_by_meet_url(meet_url)
@@ -97,6 +99,7 @@ async def _schedule_bot_for_event(event_id: str, meet_url: str, title: str):
     else:
         print(f"[CALENDAR WEBHOOK] ❌ Failed: {res.status_code} — {res.text}")  
 
+               
         
 async def _send_to_downstream(payload: dict):
     """
@@ -141,4 +144,6 @@ async def _fetch_bot_title(bot_id: str) -> str:
             title = recordings[0].get("meeting_metadata", {}).get("data", {}).get("title")
             if title:
                 return title
+
     return "Untitled Meeting"
+
