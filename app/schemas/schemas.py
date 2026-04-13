@@ -16,7 +16,6 @@ class JoinMeetingResponse(BaseModel):
 class MeetingNotesResponse(BaseModel):
     bot_id:     str
     transcript: str
-    notes:      str
 
 
 class SpeakerInfo(BaseModel):
@@ -26,15 +25,4 @@ class SpeakerInfo(BaseModel):
 
 class SpeakerTranscript(BaseModel):
     bot_id:   str
-
-    speakers: dict[str, list[str]]   # { "Rahul": ["said this", "said that"] }
-
-
-
-class PerSpeakerSummaryResponse(BaseModel):
-    bot_id: str
-    transcript: str
-    per_speaker_summary: dict
-
-    speakers: dict[str, SpeakerInfo]  # { "Rahul Kumar": { email, utterances } }
-
+    speakers: dict[str, SpeakerInfo] | None = None # { "Rahul Kumar": { email, utterances } }

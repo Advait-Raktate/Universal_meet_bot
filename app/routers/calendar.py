@@ -1,3 +1,4 @@
+
 """
 app/routers/calendar.py
 -----------------------
@@ -11,109 +12,103 @@ Endpoints:
   POST /calendar/schedule          — manually schedule bot for a meet URL
 """
 
-import os
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
-from dotenv import load_dotenv
-from app.services.bot_service import _schedule_bot_for_event , schedule_bot_by_meet_url
-#from fastapi.responses import RedirectResponse
 
-load_dotenv()
+from app.core.config import settings
+from app.services.helper import _schedule_bot_for_event
 
 router = APIRouter()
 
-# ─── CONFIG ───────────────────────────────────────────────────────────────────
-GOOGLE_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-RECALL_API_KEY       = os.getenv("RECALL_API_KEY")
-RECALL_REGION        = os.getenv("RECALL_REGION", "us-west-2")
-PUBLIC_URL           = os.getenv("PUBLIC_URL")
-
-RECALL_BASE_V2 = f"https://{RECALL_REGION}.recall.ai/api/v2"
-REDIRECT_URI   = f"{PUBLIC_URL}/calendar/google_callback"
-
-RECALL_HEADERS = {
-    "Authorization": f"Token {RECALL_API_KEY}",
-    "Content-Type":  "application/json",
-}
-
-SCOPES = " ".join([
-    "https://www.googleapis.com/auth/calendar.events.readonly",
-    "https://www.googleapis.com/auth/userinfo.email",
-])
-
-
-# Change /connect endpoint — no user_id needed
 @router.get("/connect")
 async def connect_google_calendar():
+    # No user_id needed — we'll extract email from Google after login
     params = {
-        "client_id":              GOOGLE_CLIENT_ID,
-        "redirect_uri":           REDIRECT_URI,
+        "client_id":              settings.google_client_id,
+        "redirect_uri":           settings.redirect_uri,
         "response_type":          "code",
-        "scope":                  SCOPES,
+        "scope":                  settings.google_scopes,
         "access_type":            "offline",
         "prompt":                 "consent",
         "include_granted_scopes": "true",
     }
     query_string    = "&".join(f"{k}={v}" for k, v in params.items())
     google_auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{query_string}"
+
     return RedirectResponse(url=google_auth_url)
 
 
-# Change /google_callback — auto-detect email
 @router.get("/google_callback")
 async def google_oauth_callback(code: str = Query(...)):
+    # Step 1 — exchange code for tokens
     async with httpx.AsyncClient() as client:
-        # Step 1 — exchange code for token
         token_res = await client.post(
             "https://oauth2.googleapis.com/token",
             data={
                 "code":          code,
-                "client_id":     GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "redirect_uri":  REDIRECT_URI,
+                "client_id":     settings.google_client_id,
+                "client_secret": settings.google_client_secret,
+                "redirect_uri":  settings.redirect_uri,
                 "grant_type":    "authorization_code",
             },
         )
-        token_data    = token_res.json()
-        refresh_token = token_data.get("refresh_token")
-        access_token  = token_data.get("access_token")
 
-        # Step 2 — get user email from Google automatically
-        user_info_res = await client.get(
+    if token_res.status_code != 200:
+        raise HTTPException(status_code=400, detail=f"Failed to exchange code: {token_res.text}")
+
+    tokens        = token_res.json()
+    refresh_token = tokens.get("refresh_token")
+    access_token  = tokens.get("access_token")
+
+    if not refresh_token:
+        raise HTTPException(status_code=400, detail="No refresh_token returned. Make sure prompt=consent is set.")
+
+    # Step 2 — fetch user email from Google using the access token
+    async with httpx.AsyncClient() as client:
+        userinfo_res = await client.get(
             "https://www.googleapis.com/oauth2/v2/userinfo",
-            headers={"Authorization": f"Bearer {access_token}"}
+            headers={"Authorization": f"Bearer {access_token}"},
         )
-        email = user_info_res.json().get("email", "unknown")
 
-    # Step 3 — save to Recall using email as user_id
+    if userinfo_res.status_code != 200:
+        raise HTTPException(status_code=400, detail="Failed to fetch user info from Google")
+
+    user_id = userinfo_res.json().get("email")  # e.g. "your@email.com"
+    print(f"[CALENDAR] Google user identified: {user_id}")
+
+    # Step 3 — register calendar in Recall
     async with httpx.AsyncClient() as client:
         recall_res = await client.post(
-            f"{RECALL_BASE_V2}/calendars/",
-            headers=RECALL_HEADERS,
+            f"{settings.recall_base_v2}/calendars/",
+            headers=settings.recall_headers,
             json={
-                "oauth_client_id":     GOOGLE_CLIENT_ID,
-                "oauth_client_secret": GOOGLE_CLIENT_SECRET,
+                "oauth_client_id":     settings.google_client_id,
+                "oauth_client_secret": settings.google_client_secret,
                 "oauth_refresh_token": refresh_token,
                 "platform":            "google_calendar",
             }
         )
 
-    print(f"[CALENDAR] Connected: {email}")
+    if recall_res.status_code not in (200, 201):
+        raise HTTPException(status_code=400, detail=f"Failed to create Recall calendar: {recall_res.text}")
 
-    # Step 4 — redirect to success page with email
-    return RedirectResponse(url=f"/onboarding/success?email={email}")
+    calendar_id = recall_res.json()["id"]
+    print(f"[CALENDAR] Connected for user {user_id} → calendar_id: {calendar_id}")
 
-    
+    return {
+        "message":     "Google Calendar connected successfully",
+        "user_id":     user_id,
+        "calendar_id": calendar_id,
+    }
 
 # ─── Check connection status ──────────────────────────────────────────────────
 @router.get("/status")
 async def calendar_status(user_id: str = Query(...)):
     async with httpx.AsyncClient() as client:
         res = await client.get(
-            f"{RECALL_BASE_V2}/calendars/",
-            headers=RECALL_HEADERS,
+            f"{settings.recall_base_v2}/calendars/",
+            headers=settings.recall_headers_accept,
             params={"external_id": user_id},
         )
 
@@ -136,8 +131,8 @@ async def calendar_status(user_id: str = Query(...)):
 async def list_calendar_events():
     async with httpx.AsyncClient() as client:
         res = await client.get(
-            f"{RECALL_BASE_V2}/calendar-events/",
-            headers=RECALL_HEADERS,
+            f"{settings.recall_base_v2}/calendar-events/",
+            headers=settings.recall_headers_accept,
         )
 
     events = res.json().get("results", [])
@@ -152,32 +147,3 @@ async def list_calendar_events():
         for e in events if e.get("meeting_url")
     ]
 
-
-
-@router.delete("/disconnect")
-async def disconnect_calendar(user_id: str = Query(...)):
-    async with httpx.AsyncClient() as client:
-        # Step 1 — find calendar_id for this user
-        res = await client.get(
-            f"{RECALL_BASE_V2}/calendars/",
-            headers=RECALL_HEADERS,
-            params={"external_id": user_id},
-        )
-
-    calendars = res.json().get("results", [])
-    if not calendars:
-        return {"message": f"No calendar found for user: {user_id}"}
-
-    calendar_id = calendars[0]["id"]
-
-    async with httpx.AsyncClient() as client:
-        # Step 2 — delete it from Recall
-        res = await client.delete(
-            f"{RECALL_BASE_V2}/calendars/{calendar_id}/",
-            headers=RECALL_HEADERS,
-        )
-
-    if res.status_code == 204:
-        return {"message": f"✅ Disconnected calendar for user: {user_id}", "calendar_id": calendar_id}
-    else:
-        return {"message": f"❌ Failed to disconnect", "detail": res.text}

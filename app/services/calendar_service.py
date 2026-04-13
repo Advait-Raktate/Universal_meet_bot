@@ -1,17 +1,5 @@
-import os
 import httpx
-from dotenv import load_dotenv
-
-load_dotenv()
-
-RECALL_API_KEY = os.getenv("RECALL_API_KEY")
-RECALL_REGION  = os.getenv("RECALL_REGION", "us-west-2")
-RECALL_BASE_V2 = f"https://{RECALL_REGION}.recall.ai/api/v2"
-
-RECALL_HEADERS = {
-    "Authorization": f"Token {RECALL_API_KEY}",
-    "Content-Type":  "application/json",
-}
+from app.core.config import settings
 
 
 async def get_attendees_by_meet_url(meet_url: str) -> list[dict]:
@@ -26,8 +14,8 @@ async def get_attendees_by_meet_url(meet_url: str) -> list[dict]:
     """
     async with httpx.AsyncClient() as client:
         res = await client.get(
-            f"{RECALL_BASE_V2}/calendar-events/",
-            headers=RECALL_HEADERS,
+            f"{settings.recall_base_v2}/calendar-events/",
+            headers=settings.recall_headers_accept,
         )
 
     events  = res.json().get("results", [])
@@ -39,10 +27,8 @@ async def get_attendees_by_meet_url(meet_url: str) -> list[dict]:
     if not matched:
         return []
 
-    # in calendar_service.py — add organizer to attendees list
     organizer_email = matched.get("raw", {}).get("organizer", {}).get("email", "")
-
-    raw_attendees = matched.get("raw", {}).get("attendees", [])
+    raw_attendees   = matched.get("raw", {}).get("attendees", [])
 
     if not raw_attendees and organizer_email:
         raw_attendees = [{"email": organizer_email}]
@@ -52,7 +38,7 @@ async def get_attendees_by_meet_url(meet_url: str) -> list[dict]:
     return [
         {
             "email":       a.get("email", ""),
-            "displayName": a.get("displayName", a.get("email", ""))  # fallback to email if no name
+            "displayName": a.get("displayName", a.get("email", ""))
         }
         for a in raw_attendees if a.get("email")
     ]

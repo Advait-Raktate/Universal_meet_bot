@@ -8,26 +8,14 @@ Run:
 """
 
 from fastapi import FastAPI
+from app.core.config import settings
+from app.routers import manual_trigger_bot, webhook, calendar
 
-from app.routers import bot, webhook
-#from app.routers.auth import router as auth_router
+app = FastAPI(
+    title="Meeting Bot MVP",
+    debug=settings.debug,
+)
 
-
-from app.routers import bot, webhook,calendar
-from app.routers import onboarding
-
-
-
-app = FastAPI(title="Meeting Bot MVP")
-
-app.include_router(bot.router,     prefix="/bot",     tags=["Bot"])
+app.include_router(manual_trigger_bot.router,     prefix="/bot",     tags=["Bot"])
 app.include_router(webhook.router, prefix="/webhook", tags=["Webhook"])
-app.include_router(onboarding.router, prefix="/onboarding", tags=["Onboarding"])
-#app.include_router(auth_router)
-
 app.include_router(calendar.router, prefix="/calendar", tags=["Calendar"])
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
